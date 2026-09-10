@@ -20,6 +20,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription, DialogClose } from '@/components/ui/dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
@@ -471,6 +472,23 @@ export function InvoiceImpactSimulator() {
                   onChange={(event) => void loadFile(event.target.files?.[0])}
                 />
               </div>
+
+              <Dialog>
+                <DialogTrigger render={<Button variant="outline" className="mt-3 w-full" />}>
+                  <FileSpreadsheet />仕訳CSVの切出方法
+                </DialogTrigger>
+                <DialogContent className="csv-guide-dialog" showCloseButton={false}>
+                  <div className="flex items-center justify-between gap-4">
+                    <DialogTitle>仕訳CSVの切出方法</DialogTitle>
+                    <DialogClose render={<Button variant="outline" size="sm" />}>閉じる</DialogClose>
+                  </div>
+                  <DialogDescription>①仕訳帳を開く → ②対象期間を選ぶ → ③虫眼鏡で表示 → ④CSV出力</DialogDescription>
+                  <a href="./csv-export-guide.png" target="_blank" rel="noopener noreferrer" aria-label="手順画像を原寸で開く（別タブ）">
+                    <img src="./csv-export-guide.png" alt="TKC仕訳帳で対象期間を指定して検索し、右上のCSV出力ボタンから仕訳CSVを切り出す手順" className="w-full h-auto" />
+                  </a>
+                  <p className="text-sm text-muted-foreground">画像をクリックすると別タブで原寸表示できます。</p>
+                </DialogContent>
+              </Dialog>
 
               {error ? (
                 <Alert variant="destructive" className="mt-4">
