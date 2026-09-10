@@ -316,6 +316,58 @@
   * { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
 }
 
+/* Results use available width; detail records wrap instead of scrolling. */
+.workspace-grid { width: min(1600px, 100%); grid-template-columns: minmax(300px, 350px) minmax(0, 1fr); gap: 24px; padding-inline: 24px; }
+.transition-strip { flex-wrap: wrap; gap: 12px 20px; padding: 12px 24px; color: var(--navy); background: #fff; }
+.transition-strip span, .transition-strip small { color: #52636c; }
+.transition-strip strong, .transition-strip .active strong { color: var(--navy); font-size: 1.1rem; }
+.transition-strip > p { border: 0; padding: 0; color: #52636c; }
+.impact-hero { justify-content: space-between; flex-wrap: wrap; gap: 12px 24px; padding: 20px 24px; border: 1px solid #cad8dd; border-radius: 10px; color: var(--navy); background: #fff; box-shadow: none; }
+.impact-hero::before { content: none; }
+.impact-copy { flex: 1 1 230px; }
+.impact-copy > span { padding: 0; border-radius: 0; color: #52636c; background: none; font-size: .875rem; }
+.impact-copy h3 { color: var(--navy); margin: 6px 0; }
+.impact-copy p { color: #52636c; }
+.impact-amount { margin-left: auto; max-width: 100%; overflow-wrap: anywhere; font-size: clamp(2rem, 3.5vw, 3rem); line-height: 1.15; font-variant-numeric: tabular-nums; text-align: right; }
+.detail-card [data-slot='table-container'] { overflow: visible; }
+.detail-card table { width: 100%; table-layout: fixed; }
+.detail-card [data-slot='table-head'], .detail-card [data-slot='table-cell'] { white-space: normal; overflow-wrap: anywhere; padding: 10px 8px; font-size: .875rem; }
+.detail-card .truncate { overflow: visible; text-overflow: clip; white-space: normal; }
+.entry-detail-card thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.entry-detail-card table, .entry-detail-card tbody { display: block; }
+.entry-detail-card tbody tr { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 8px; border-bottom: 1px solid #d9e2e6; }
+.entry-detail-card tbody td { display: block; text-align: left; }
+.entry-detail-card tbody td::before { display: block; color: #52636c; font-size: .75rem; margin-bottom: 3px; }
+.entry-detail-card td:nth-child(1)::before { content: '開始物理行'; }
+.entry-detail-card td:nth-child(2)::before { content: 'データ行'; }
+.entry-detail-card td:nth-child(3)::before { content: '日付'; }
+.entry-detail-card td:nth-child(4)::before { content: '側'; }
+.entry-detail-card td:nth-child(5)::before { content: '区分'; }
+.entry-detail-card td:nth-child(6)::before { content: '取引金額'; }
+.entry-detail-card td:nth-child(7)::before { content: '税率'; }
+.entry-detail-card td:nth-child(8)::before { content: '100％税額相当'; }
+.entry-detail-card td:nth-child(9)::before { content: 'CSV税額'; }
+.entry-detail-card td:nth-child(10)::before { content: '算定根拠・状態'; }
+@media (max-width: 1050px) { .workspace-grid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {
+  .transition-strip { display: flex; padding: 10px 18px; }
+  .transition-strip > div { display: flex; flex-wrap: wrap; gap: 4px 8px; text-align: left; }
+  .transition-strip small { display: block; }
+  .workspace-grid { padding-inline: 16px; }
+  .impact-hero { padding: 16px; }
+  .detail-card thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .detail-card table, .detail-card tbody { display: block; }
+  .detail-card tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 8px; border-bottom: 1px solid #d9e2e6; }
+  .detail-card tbody td { display: block; text-align: left; }
+  .detail-card tbody td::before { display: block; color: #52636c; font-size: .75rem; margin-bottom: 3px; }
+  .detail-card:not(.entry-detail-card) td:first-child { grid-column: 1 / -1; }
+  .detail-card:not(.entry-detail-card) td:nth-child(1)::before { content: '仕入先'; }
+  .detail-card:not(.entry-detail-card) td:nth-child(2)::before { content: '対象仕入（年換算前）'; }
+  .detail-card:not(.entry-detail-card) td:nth-child(3)::before { content: '件数'; }
+  .detail-card:not(.entry-detail-card) td:nth-child(4)::before { content: '経過措置変更の差額'; }
+  .detail-card:not(.entry-detail-card) td:nth-child(5)::before { content: '登録事業者との差額'; }
+}
+
 @page {
   size: A4 portrait;
   margin: 9mm;

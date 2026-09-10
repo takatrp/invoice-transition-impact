@@ -721,13 +721,14 @@ export function InvoiceImpactSimulator() {
               <div className="impact-hero">
                 <div className="impact-copy">
                   <span>{rateLabel(settings.beforeRate)} → {rateLabel(settings.afterRate)}・{isAnnualized ? '年間換算' : 'CSV期間'}</span>
-                  <h3>{impactHeading(displayResult.transitionImpact)}<strong>{formatYen(Math.abs(displayResult.transitionImpact * displayFactor))}</strong></h3>
+                  <h3>{impactHeading(displayResult.transitionImpact)}</h3>
                   {isAnnualized && periodSpan ? (
                     <p>{periodSpan}日間の実績から365日へ換算した概算です。</p>
                   ) : (
                     <p>CSV期間内の対象仕訳から計算した概算です。</p>
                   )}
                 </div>
+                <strong className="impact-amount">{formatYen(Math.abs(displayResult.transitionImpact * displayFactor))}</strong>
               </div>
 
               <div className="scenario-grid">
