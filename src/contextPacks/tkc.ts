@@ -1,0 +1,54 @@
+export const tkcContextPack = {
+  id: 'tkc',
+  affectedTaxCodes: ['52', '62', '72'] as const,
+  taxCodeLabels: {
+    '52': '免税事業者等からの課税仕入れ（課税売上げ対応）',
+    '62': '免税事業者等からの課税仕入れ（非課税売上げ対応）',
+    '72': '免税事業者等からの課税仕入れ（共通対応）',
+  } as Record<string, string>,
+  headerAliases: {
+    taxCode: [
+      '課税区分',
+      '税区分',
+      '税区分コード',
+      '課税区分コード',
+      '消費税区分',
+      '消費税コード',
+    ],
+    amount: [
+      '税込金額',
+      '取引金額',
+      '金額',
+      '本体金額',
+      '仕訳金額',
+    ],
+    date: ['取引年月日', '取引日', '仕訳日付', '日付', '伝票日付'],
+    taxRate: ['税率', '消費税率', '適用税率'],
+    taxAmount: ['消費税額', '税額', '仮払消費税額'],
+    partner: [
+      '取引先',
+      '取引先名',
+      '相手先',
+      '相手先名',
+      '仕入先',
+      '仕入先名',
+      '補助科目名',
+      '補助名',
+    ],
+    description: ['摘要', '取引内容', '備考', 'メモ'],
+  },
+  splitHeaders: {
+    debitTaxCode: ['借方税区分コード', '借方課税区分', '借方税区分'],
+    debitAmount: ['借方金額', '借方取引金額'],
+    debitTaxRate: ['借方税率', '借方消費税率'],
+    debitTaxAmount: ['借方消費税額', '借方税額'],
+    debitPartner: ['借方取引先名', '借方相手先名', '借方補助名', '借方補助科目名'],
+    creditTaxCode: ['貸方税区分コード', '貸方課税区分', '貸方税区分'],
+    creditAmount: ['貸方金額', '貸方取引金額'],
+    creditTaxRate: ['貸方税率', '貸方消費税率'],
+    creditTaxAmount: ['貸方消費税額', '貸方税額'],
+    creditPartner: ['貸方取引先名', '貸方相手先名', '貸方補助名', '貸方補助科目名'],
+  },
+} as const;
+
+export type TkcTaxCode = (typeof tkcContextPack.affectedTaxCodes)[number];
