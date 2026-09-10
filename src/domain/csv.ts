@@ -51,12 +51,25 @@ export function parseCsv(text: string): string[][] {
     }
   }
 
+  if (quoted) {
+    throw new Error('CSVの引用符が閉じられていません。元CSVを確認してください。');
+  }
+
   if (field !== '' || row.length > 0) {
     row.push(field.replace(/\r$/, ''));
     rows.push(row);
   }
 
   return rows.filter((cells) => cells.some((cell) => cell.trim() !== ''));
+}
+
+export function validateCsvRows(rows: string[][]): void {
+  if (rows.length === 0) return;
+  const expected = rows[0].length;
+  const invalid = rows.slice(1).findIndex((row) => row.length !== expected);
+  if (invalid >= 0) {
+    throw new Error(`CSVの${invalid + 2}行目は列数が見出し行と一致しません。元CSVを確認してください。`);
+  }
 }
 
 export function normalizeHeader(value: string): string {
@@ -162,6 +175,7 @@ export async function readCsvFile(file: File): Promise<CsvData> {
   if (parsed.length < 2) {
     throw new Error('見出し行と1件以上の仕訳データがあるCSVを選んでください。');
   }
+  validateCsvRows(parsed);
 
   return {
     fileName: file.name,

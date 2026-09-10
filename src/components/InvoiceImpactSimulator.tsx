@@ -20,6 +20,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
@@ -45,7 +46,12 @@ import {
   parseCsv,
   readCsvFile,
 } from '@/src/domain/csv';
-import { rateLabel, transitionRateOptions } from '@/src/domain/rates';
+import {
+  classifyImpact,
+  getTransitionStage,
+  rateLabel,
+  transitionRateOptions,
+} from '@/src/domain/rates';
 import { registerInvoiceComparisonTool } from '@/src/domain/webmcp';
 import type {
   AnalysisSettings,
@@ -55,14 +61,26 @@ import type {
   RatePreset,
 } from '@/src/domain/types';
 
-const defaultSettings: AnalysisSettings = {
-  beforeRate: 0.8,
-  afterRate: 0.7,
-  amountMode: 'included',
-  defaultTaxRate: 10,
-  calculationMethod: 'full',
-  taxableSalesRatio: 1,
-};
+function localToday(): string {
+  const now = new Date();
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function createDefaultSettings(): AnalysisSettings {
+  const stage = getTransitionStage(localToday());
+  return {
+    beforeRate: stage.currentRate,
+    afterRate: stage.nextRate ?? stage.currentRate,
+    amountMode: 'included',
+    defaultTaxRate: 10,
+    calculationMethod: 'full',
+    taxableSalesRatio: 1,
+  };
+}
 
 const sampleText = `取引年月日,課税区分,税込金額,税率,取引先,摘要
 2026/04/15,52,"1,100,000",10%,西日本デザイン,業務委託料
@@ -82,6 +100,24 @@ function createSampleCsv(): CsvData {
 
 function formatDate(value: string | null): string {
   return value ? value.replace(/-/g, '/') : '日付列なし';
+}
+
+function impactHeading(value: number): string {
+  const direction = classifyImpact(value);
+  if (direction === 'decrease') return '納付減少・還付増加の見込';
+  if (direction === 'none') return '仕入控除税額への直接影響';
+  return '納付増加・還付減少の見込';
+}
+
+function invalidReason(reason: 'amount_missing' | 'amount_invalid'): string {
+  return reason === 'amount_missing' ? '金額が空欄' : '金額の形式が不正';
+}
+
+function calculationMethodLabel(method: CalculationMethod): string {
+  if (method === 'individual') return '個別対応方式';
+  if (method === 'proportional') return '一括比例配分方式';
+  if (method === 'simplified') return '簡易課税等（実額仕入の直接影響なし）';
+  return '全額控除';
 }
 
 function mappingValue(index: number | null): string {
@@ -181,9 +217,22 @@ export function InvoiceImpactSimulator() {
   const [mappings, setMappings] = useState<EntryMapping[]>(() =>
     inferMappings(createSampleCsv().headers),
   );
-  const [settings, setSettings] = useState(defaultSettings);
+  const [settings, setSettings] = useState<AnalysisSettings>(() => createDefaultSettings());
   const [isSample, setIsSample] = useState(true);
-  const [displayMode, setDisplayMode] = useState<'period' | 'annualized'>('annualized');
+  const [displayMode, setDisplayMode] = useState<'period' | 'annualized'>('period');
+  const [periodInput, setPeriodInput] = useState({
+    start: '',
+    end: '',
+    confirmed: false,
+    shortPeriodConfirmed: false,
+  });
+  const [assumptionChecks, setAssumptionChecks] = useState({
+    generalTaxation: false,
+    calculationMethod: false,
+    amountMode: false,
+    specialTransactions: false,
+  });
+  const [detailPage, setDetailPage] = useState(0);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -205,21 +254,77 @@ export function InvoiceImpactSimulator() {
     () => (mappingComplete ? analyzeCsv(csv, mappings, settings) : null),
     [csv, mappingComplete, mappings, settings],
   );
-  const periodSpan = result ? spanDays(result.sourceDateMin, result.sourceDateMax) : null;
-  const annualizationFactor = periodSpan && periodSpan > 0 ? 365 / periodSpan : null;
-  const isAnnualized = displayMode === 'annualized' && annualizationFactor !== null;
-  const displayFactor = isAnnualized
-    ? annualizationFactor
-    : 1;
-  const maxScenario = result
+  const periodSpan = spanDays(periodInput.start || null, periodInput.end || null);
+  const periodValid = periodSpan !== null && periodSpan > 0;
+  const shortPeriod = periodSpan !== null && periodSpan < 300;
+  const annualizedResult = useMemo(
+    () => (
+      mappingComplete && periodInput.confirmed && periodValid
+        ? analyzeCsv(csv, mappings, settings, {
+            start: periodInput.start,
+            end: periodInput.end,
+          })
+        : null
+    ),
+    [csv, mappingComplete, mappings, periodInput.confirmed, periodInput.end, periodInput.start, periodValid, settings],
+  );
+  const annualizationReady = Boolean(
+    annualizedResult
+      && annualizedResult.targetEntries.length > 0
+      && (!shortPeriod || periodInput.shortPeriodConfirmed),
+  );
+  const isAnnualized = displayMode === 'annualized' && annualizationReady;
+  const displayResult = isAnnualized && annualizedResult ? annualizedResult : result;
+  const displayFactor = isAnnualized && periodSpan ? 365 / periodSpan : 1;
+  const maxScenario = displayResult
     ? Math.max(
-        Math.abs(result.beforeCredit),
-        Math.abs(result.afterCredit),
-        Math.abs(result.registeredCredit),
+        Math.abs(displayResult.beforeCredit),
+        Math.abs(displayResult.afterCredit),
+        Math.abs(displayResult.registeredCredit),
       )
     : 0;
+  const transitionStage = useMemo(() => getTransitionStage(localToday()), []);
+  const scheduleRates: RatePreset[] = [0.8, 0.7, 0.5, 0.3, 0];
+  const currentScheduleIndex = scheduleRates.indexOf(transitionStage.currentRate);
+  const laterRates = scheduleRates.slice(currentScheduleIndex + 2);
+  const assumptionsComplete = Object.values(assumptionChecks).every(Boolean);
+  const detailRows = useMemo(() => {
+    if (!result) return [];
+    return [
+      ...result.targetEntries.map((entry) => ({ kind: 'valid' as const, sourceRow: entry.sourceRow, entry })),
+      ...result.invalidTargetEntries.map((entry) => ({ kind: 'invalid' as const, sourceRow: entry.sourceRow, entry })),
+    ].sort((left, right) => left.sourceRow - right.sourceRow);
+  }, [result]);
+  const detailPageSize = 25;
+  const detailPageCount = Math.max(1, Math.ceil(detailRows.length / detailPageSize));
+  const visibleDetailRows = detailRows.slice(
+    detailPage * detailPageSize,
+    (detailPage + 1) * detailPageSize,
+  );
+  const periodIssueByEntry = useMemo(() => new Map(
+    (annualizedResult?.periodExcludedEntries ?? []).map((entry) => [
+      `${entry.sourceRow}-${entry.mappingLabel}`,
+      entry.reason,
+    ]),
+  ), [annualizedResult]);
 
   useEffect(() => registerInvoiceComparisonTool(setSettings), []);
+
+  useEffect(() => {
+    if (!result) return;
+    setPeriodInput({
+      start: result.sourceDateMin ?? '',
+      end: result.sourceDateMax ?? '',
+      confirmed: false,
+      shortPeriodConfirmed: false,
+    });
+    setDisplayMode('period');
+    setDetailPage(0);
+  }, [csv, mappings]);
+
+  useEffect(() => {
+    if (!annualizationReady && displayMode === 'annualized') setDisplayMode('period');
+  }, [annualizationReady, displayMode]);
 
   async function loadFile(file: File | undefined) {
     if (!file) return;
@@ -232,6 +337,12 @@ export function InvoiceImpactSimulator() {
       setCsv(loaded);
       setMappings(inferMappings(loaded.headers));
       setIsSample(false);
+      setAssumptionChecks({
+        generalTaxation: false,
+        calculationMethod: false,
+        amountMode: false,
+        specialTransactions: false,
+      });
       setError('');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'CSVを読み取れませんでした。');
@@ -242,8 +353,14 @@ export function InvoiceImpactSimulator() {
     const sample = createSampleCsv();
     setCsv(sample);
     setMappings(inferMappings(sample.headers));
-    setSettings(defaultSettings);
-    setDisplayMode('annualized');
+    setSettings(createDefaultSettings());
+    setDisplayMode('period');
+    setAssumptionChecks({
+      generalTaxation: false,
+      calculationMethod: false,
+      amountMode: false,
+      specialTransactions: false,
+    });
     setIsSample(true);
     setError('');
   }
@@ -283,19 +400,19 @@ export function InvoiceImpactSimulator() {
       <section className="transition-strip" aria-label="経過措置の変更">
         <div>
           <span>現在</span>
-          <strong>80％</strong>
-          <small>～2026.09</small>
+          <strong>{rateLabel(transitionStage.currentRate)}</strong>
+          <small>{transitionStage.currentEndsOn ? `～${transitionStage.currentEndsOn.slice(0, 7).replace('-', '.')}` : '最終段階'}</small>
         </div>
         <ArrowRight aria-hidden="true" />
         <div className="active">
           <span>次の変更</span>
-          <strong>70％</strong>
-          <small>2026.10～</small>
+          <strong>{transitionStage.nextRate === null ? '変更なし' : rateLabel(transitionStage.nextRate)}</strong>
+          <small>{transitionStage.nextStartsOn ? `${transitionStage.nextStartsOn.slice(0, 7).replace('-', '.')}～` : '現行日程の最終'}</small>
         </div>
         <ArrowRight aria-hidden="true" />
         <div>
           <span>その後</span>
-          <strong>50％ → 30％ → 0％</strong>
+          <strong>{laterRates.length > 0 ? laterRates.map(rateLabel).join(' → ') : '0％'}</strong>
           <small>段階的に縮小</small>
         </div>
         <p>{appMeta.calculationRuleLabel}</p>
@@ -306,7 +423,7 @@ export function InvoiceImpactSimulator() {
           <Card className="upload-card">
             <CardHeader>
               <div className="section-kicker">手順 1</div>
-              <CardTitle className="text-lg">1年分の仕訳CSVを入れる</CardTitle>
+              <CardTitle className="text-lg">仕訳CSVを入れる</CardTitle>
               <CardDescription>
                 課税区分52・62・72の仕訳だけを抽出します。
               </CardDescription>
@@ -385,7 +502,7 @@ export function InvoiceImpactSimulator() {
                         <ColumnSelect label="課税区分" value={mapping.taxCodeIndex} headers={csv.headers} onChange={(value) => updateMapping(index, { taxCodeIndex: value })} />
                         <ColumnSelect label="金額" value={mapping.amountIndex} headers={csv.headers} onChange={(value) => updateMapping(index, { amountIndex: value })} />
                         <ColumnSelect label="税率" value={mapping.taxRateIndex} headers={csv.headers} optional onChange={(value) => updateMapping(index, { taxRateIndex: value })} />
-                        <ColumnSelect label="税額" value={mapping.taxAmountIndex} headers={csv.headers} optional onChange={(value) => updateMapping(index, { taxAmountIndex: value })} />
+                        <ColumnSelect label="CSV税額（検算用）" value={mapping.taxAmountIndex} headers={csv.headers} optional onChange={(value) => updateMapping(index, { taxAmountIndex: value })} />
                         <ColumnSelect label="仕入先" value={mapping.partnerIndex} headers={csv.headers} optional onChange={(value) => updateMapping(index, { partnerIndex: value })} />
                         <ColumnSelect label="取引日" value={mapping.dateIndex} headers={csv.headers} optional onChange={(value) => updateMapping(index, { dateIndex: value })} />
                       </div>
@@ -422,6 +539,60 @@ export function InvoiceImpactSimulator() {
                 </div>
               </div>
 
+              <div className="period-confirmation">
+                <span className="field-label">CSVの集計対象期間</span>
+                <div className="period-inputs">
+                  <label>
+                    <span>開始日</span>
+                    <input
+                      type="date"
+                      value={periodInput.start}
+                      onChange={(event) => {
+                        setPeriodInput((current) => ({ ...current, start: event.target.value, confirmed: false, shortPeriodConfirmed: false }));
+                        setDisplayMode('period');
+                      }}
+                    />
+                  </label>
+                  <label>
+                    <span>終了日</span>
+                    <input
+                      type="date"
+                      value={periodInput.end}
+                      onChange={(event) => {
+                        setPeriodInput((current) => ({ ...current, end: event.target.value, confirmed: false, shortPeriodConfirmed: false }));
+                        setDisplayMode('period');
+                      }}
+                    />
+                  </label>
+                </div>
+                <small>取引日から観測した範囲：{formatDate(result?.sourceDateMin ?? null)}〜{formatDate(result?.sourceDateMax ?? null)}</small>
+                <label className="assumption-check" htmlFor="period-confirmed">
+                  <Checkbox
+                    id="period-confirmed"
+                    checked={periodInput.confirmed}
+                    disabled={!periodValid}
+                    onCheckedChange={(checked) => {
+                      setPeriodInput((current) => ({ ...current, confirmed: Boolean(checked), shortPeriodConfirmed: false }));
+                      setDisplayMode('period');
+                    }}
+                  />
+                  <span>この開始日・終了日がCSVの抽出期間であることを確認しました</span>
+                </label>
+                {periodInput.confirmed && shortPeriod && periodSpan ? (
+                  <label className="assumption-check is-warning" htmlFor="short-period-confirmed">
+                    <Checkbox
+                      id="short-period-confirmed"
+                      checked={periodInput.shortPeriodConfirmed}
+                      onCheckedChange={(checked) => {
+                        setPeriodInput((current) => ({ ...current, shortPeriodConfirmed: Boolean(checked) }));
+                        setDisplayMode('period');
+                      }}
+                    />
+                    <span>{periodSpan}日間の仕入構成が一年続くと仮定して365日換算することを確認しました</span>
+                  </label>
+                ) : null}
+              </div>
+
               <div>
                 <span className="field-label">金額の表示</span>
                 <RadioGroup value={isAnnualized ? 'annualized' : 'period'} onValueChange={(value) => setDisplayMode(value as 'period' | 'annualized')} className="display-mode">
@@ -430,15 +601,18 @@ export function InvoiceImpactSimulator() {
                     <span><strong>CSV期間</strong><small>読込期間内の実績</small></span>
                   </label>
                   <label className="display-option" htmlFor="display-annualized">
-                    <RadioGroupItem id="display-annualized" value="annualized" disabled={!annualizationFactor} />
-                    <span><strong>年間換算</strong><small>{periodSpan ? `${periodSpan}日から365日へ換算` : '日付列が必要'}</small></span>
+                    <RadioGroupItem id="display-annualized" value="annualized" disabled={!annualizationReady} />
+                    <span><strong>年間換算</strong><small>{annualizationReady && periodSpan ? `${periodSpan}日から365日へ換算` : '期間の確認が必要'}</small></span>
                   </label>
                 </RadioGroup>
               </div>
 
               <div>
                 <span className="field-label">仕入控除税額の計算方法</span>
-                <RadioGroup value={settings.calculationMethod} onValueChange={(value) => setSettings((current) => ({ ...current, calculationMethod: value as CalculationMethod }))} className="method-grid">
+                <RadioGroup value={settings.calculationMethod} onValueChange={(value) => {
+                  setSettings((current) => ({ ...current, calculationMethod: value as CalculationMethod }));
+                  setAssumptionChecks((current) => ({ ...current, calculationMethod: false }));
+                }} className="method-grid">
                   <MethodOption value="full" title="全額控除" description="5億円以下かつ課税売上割合95%以上を想定" />
                   <MethodOption value="individual" title="個別対応" description="52・62・72の用途区分を反映" />
                   <MethodOption value="proportional" title="一括比例" description="全対象に課税売上割合を乗算" />
@@ -453,6 +627,7 @@ export function InvoiceImpactSimulator() {
                     <input id="taxable-sales-ratio" type="number" min="0" max="100" step="0.1" value={Math.round(settings.taxableSalesRatio * 1000) / 10} onChange={(event) => {
                       const next = Number(event.target.value);
                       setSettings((current) => ({ ...current, taxableSalesRatio: Number.isFinite(next) ? Math.min(1, Math.max(0, next / 100)) : 0 }));
+                      setAssumptionChecks((current) => ({ ...current, calculationMethod: false }));
                     }} />
                     <span>%</span>
                   </div>
@@ -462,18 +637,44 @@ export function InvoiceImpactSimulator() {
               <div className="inline-settings">
                 <div className="select-field">
                   <span>CSVの金額</span>
-                  <Select value={settings.amountMode} onValueChange={(value) => setSettings((current) => ({ ...current, amountMode: value as AnalysisSettings['amountMode'] }))}>
+                  <Select value={settings.amountMode} onValueChange={(value) => {
+                    setSettings((current) => ({ ...current, amountMode: value as AnalysisSettings['amountMode'] }));
+                    setAssumptionChecks((current) => ({ ...current, amountMode: false }));
+                  }}>
                     <SelectTrigger className="h-10 w-full bg-white" aria-label="CSV金額の税込・税抜"><SelectValue>{settings.amountMode === 'included' ? '税込' : '税抜'}</SelectValue></SelectTrigger>
                     <SelectContent><SelectItem value="included">税込</SelectItem><SelectItem value="excluded">税抜</SelectItem></SelectContent>
                   </Select>
                 </div>
                 <div className="select-field">
                   <span>税率がない行</span>
-                  <Select value={String(settings.defaultTaxRate)} onValueChange={(value) => setSettings((current) => ({ ...current, defaultTaxRate: Number(value) as 8 | 10 }))}>
+                  <Select value={String(settings.defaultTaxRate)} onValueChange={(value) => {
+                    setSettings((current) => ({ ...current, defaultTaxRate: Number(value) as 8 | 10 }));
+                    setAssumptionChecks((current) => ({ ...current, amountMode: false }));
+                  }}>
                     <SelectTrigger className="h-10 w-full bg-white" aria-label="税率がない行の既定税率"><SelectValue>{`既定 ${settings.defaultTaxRate}%`}</SelectValue></SelectTrigger>
                     <SelectContent><SelectItem value="10">標準税率 10%</SelectItem><SelectItem value="8">軽減税率 8%</SelectItem></SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              <div className="assumption-checklist">
+                <span className="field-label">試算前の確認</span>
+                <label className="assumption-check" htmlFor="check-general-taxation">
+                  <Checkbox id="check-general-taxation" checked={assumptionChecks.generalTaxation} onCheckedChange={(checked) => setAssumptionChecks((current) => ({ ...current, generalTaxation: Boolean(checked) }))} />
+                  <span>一般課税による申告である</span>
+                </label>
+                <label className="assumption-check" htmlFor="check-method">
+                  <Checkbox id="check-method" checked={assumptionChecks.calculationMethod} onCheckedChange={(checked) => setAssumptionChecks((current) => ({ ...current, calculationMethod: Boolean(checked) }))} />
+                  <span>計算方式{settings.calculationMethod === 'individual' || settings.calculationMethod === 'proportional' ? 'と課税売上割合' : ''}を確認した</span>
+                </label>
+                <label className="assumption-check" htmlFor="check-amount-mode">
+                  <Checkbox id="check-amount-mode" checked={assumptionChecks.amountMode} onCheckedChange={(checked) => setAssumptionChecks((current) => ({ ...current, amountMode: Boolean(checked) }))} />
+                  <span>CSV金額が{settings.amountMode === 'included' ? '税込' : '税抜'}であることを確認した</span>
+                </label>
+                <label className="assumption-check" htmlFor="check-special-transactions">
+                  <Checkbox id="check-special-transactions" checked={assumptionChecks.specialTransactions} onCheckedChange={(checked) => setAssumptionChecks((current) => ({ ...current, specialTransactions: Boolean(checked) }))} />
+                  <span>少額特例等で全額控除できる取引が52・62・72に残っていないことを確認した</span>
+                </label>
               </div>
             </CardContent>
           </Card>
@@ -484,7 +685,7 @@ export function InvoiceImpactSimulator() {
         <section className="result-column" aria-live="polite">
           {!mappingComplete ? (
             <div className="empty-result"><AlertTriangle /><h2>読み取る列を指定してください</h2><p>左の「読み取る列を確認」から、課税区分列と金額列を選びます。</p></div>
-          ) : result && result.targetEntries.length === 0 ? (
+          ) : result && result.detectedTargetCount === 0 ? (
             <div className="empty-result">
               <FileSpreadsheet />
               {tkcJournalDetected ? <div className="format-detected"><CheckCircle2 />TKC仕訳帳形式を自動認識</div> : null}
@@ -500,81 +701,162 @@ export function InvoiceImpactSimulator() {
                 <p>借方・貸方の課税区分を自動で確認しましたが、対象コードはありませんでした。</p>
               )}
             </div>
-          ) : result ? (
+          ) : result && result.targetEntries.length === 0 ? (
+            <div className="empty-result">
+              <AlertTriangle />
+              <h2>対象コードを{result.detectedTargetCount.toLocaleString('ja-JP')}件検出しましたが、金額を読めませんでした</h2>
+              <p>元CSV行 {result.invalidTargetEntries.slice(0, 20).map((entry) => entry.sourceRow).join('、')}{result.invalidTargetEntries.length > 20 ? ' ほか' : ''} の金額列を確認してください。</p>
+              <Alert className="empty-warning">
+                <AlertTriangle />
+                <AlertTitle>計算できない対象行</AlertTitle>
+                <AlertDescription>
+                  {result.invalidTargetEntries.slice(0, 20).map((entry) => (
+                    <div key={`${entry.sourceRow}-${entry.mappingLabel}`}>元CSV {entry.sourceRow}行・{entry.mappingLabel}・課税区分{entry.taxCode}：{invalidReason(entry.reason)}</div>
+                  ))}
+                </AlertDescription>
+              </Alert>
+            </div>
+          ) : result && displayResult ? (
             <>
               <div className="result-heading">
                 <div>
-                  <div className="result-status"><CheckCircle2 /> 試算できました</div>
+                  <div className={`result-status ${result.invalidTargetRowCount > 0 || !assumptionsComplete || result.hasOneHundredMillionSupplier ? 'is-warning' : ''}`}>
+                    {result.invalidTargetRowCount > 0 || !assumptionsComplete || result.hasOneHundredMillionSupplier ? <AlertTriangle /> : <CheckCircle2 />}
+                    {result.invalidTargetRowCount > 0
+                      ? '一部除外した参考集計'
+                      : result.hasOneHundredMillionSupplier
+                        ? '上限未反映の参考値'
+                        : assumptionsComplete
+                          ? '確認済みの試算'
+                          : '未確認事項のある参考値'}
+                  </div>
                   <h2>経過措置の変更による影響</h2>
-                  <p>{result.targetEntries.length.toLocaleString('ja-JP')}件・対象仕入 {formatYen(result.grossAmount)}</p>
+                  <p>{displayResult.targetEntries.length.toLocaleString('ja-JP')}件・集計対象仕入 {formatYen(displayResult.grossAmount)}</p>
                 </div>
-                <div className="period-chip"><span>元CSVの対象期間</span><strong>{formatDate(result.sourceDateMin)} — {formatDate(result.sourceDateMax)}</strong></div>
+                <div className="period-chip">
+                  <span>{isAnnualized ? '確認した集計対象期間' : 'CSVで観測した取引日範囲'}</span>
+                  <strong>{isAnnualized ? `${formatDate(periodInput.start)} — ${formatDate(periodInput.end)}` : `${formatDate(result.sourceDateMin)} — ${formatDate(result.sourceDateMax)}`}</strong>
+                </div>
               </div>
+
+              <div className="result-premise">
+                <strong>計算前提</strong>
+                <span>{calculationMethodLabel(settings.calculationMethod)}</span>
+                {(settings.calculationMethod === 'individual' || settings.calculationMethod === 'proportional') ? <span>課税売上割合 {Math.round(settings.taxableSalesRatio * 1000) / 10}％</span> : null}
+                <span>CSV金額 {settings.amountMode === 'included' ? '税込' : '税抜'}</span>
+                <span>確認 {Object.values(assumptionChecks).filter(Boolean).length}/4</span>
+              </div>
+
+              {result.hasOneHundredMillionSupplier ? (
+                <Alert className="reference-banner">
+                  <AlertTriangle />
+                  <AlertTitle>1仕入先ごとの控除限度額を反映していない参考値です</AlertTitle>
+                  <AlertDescription>税込1億円を超える仕入先を検出しました。課税期間の開始日などを確認し、別途上限計算を行ってください。</AlertDescription>
+                </Alert>
+              ) : null}
 
               <div className="impact-hero">
                 <div className="impact-copy">
                   <span>{rateLabel(settings.beforeRate)} → {rateLabel(settings.afterRate)}・{isAnnualized ? '年間換算' : 'CSV期間'}</span>
-                  <h3>納付増加・還付減少の見込<strong>{formatYen(result.transitionImpact * displayFactor)}</strong></h3>
+                  <h3>{impactHeading(displayResult.transitionImpact)}<strong>{formatYen(Math.abs(displayResult.transitionImpact * displayFactor))}</strong></h3>
                   {isAnnualized && periodSpan ? (
-                    <p>CSV期間の影響 {formatYen(result.transitionImpact)} × 365日 ÷ {periodSpan}日</p>
+                    <p>この仕入構成が一年続くと仮定した年換算影響：集計期間の影響 {formatYen(displayResult.transitionImpact)} × 365日 ÷ {periodSpan}日</p>
                   ) : (
-                    <p>元CSVの対象期間内で、仕入控除税額が減る分の概算です。</p>
+                    <p>元CSVに含まれる対象仕訳について、仕入控除税額の増減を比較した概算です。</p>
                   )}
                 </div>
-                <div className="impact-orbit" aria-hidden="true"><span>{isAnnualized ? '年換算差額' : '期間差額'}</span><strong>{formatYen(result.transitionImpact * displayFactor)}</strong></div>
+                <div className="impact-orbit" aria-hidden="true"><span>{isAnnualized ? '年換算差額' : '期間差額'}</span><strong>{formatYen(displayResult.transitionImpact * displayFactor)}</strong></div>
               </div>
 
               <div className="scenario-grid">
-                <ScenarioCard eyebrow="変更前" rate={rateLabel(settings.beforeRate)} amount={result.beforeCredit * displayFactor} tone="before" max={maxScenario * displayFactor} />
-                <ScenarioCard eyebrow="変更後" rate={rateLabel(settings.afterRate)} amount={result.afterCredit * displayFactor} tone="after" max={maxScenario * displayFactor} />
-                <ScenarioCard eyebrow="登録事業者なら" rate="100%" amount={result.registeredCredit * displayFactor} tone="registered" max={maxScenario * displayFactor} />
+                <ScenarioCard eyebrow="変更前" rate={rateLabel(settings.beforeRate)} amount={displayResult.beforeCredit * displayFactor} tone="before" max={maxScenario * displayFactor} />
+                <ScenarioCard eyebrow="変更後" rate={rateLabel(settings.afterRate)} amount={displayResult.afterCredit * displayFactor} tone="after" max={maxScenario * displayFactor} />
+                <ScenarioCard eyebrow="登録事業者との比較" rate="100％" amount={displayResult.registeredCredit * displayFactor} tone="registered" max={maxScenario * displayFactor} />
               </div>
 
               <div className="registered-callout">
                 <div className="callout-icon"><Building2 /></div>
                 <div>
                   <span>同じ税込価格で、適格請求書を保存できる前提</span>
-                  <h3>登録事業者との取引なら、最大 {formatYen(result.registeredBenefit * displayFactor)} の差</h3>
-                  <p>{isAnnualized ? '年間換算で、' : 'CSV期間内で、'}変更後時点の未登録仕入先と比べて納付増を避けられる可能性があります。</p>
+                  <h3>変更後の未登録仕入先と登録事業者との仕入控除税額差 {formatYen(displayResult.registeredBenefit * displayFactor)}</h3>
+                  <p>{isAnnualized ? '年間換算で、' : 'CSV期間内で、'}同一価格・同一取引条件を仮定した税額上の比較です。登録判断や値引条件の推奨ではありません。</p>
                 </div>
               </div>
 
               <div className="kpi-grid">
                 <div><span>元CSV</span><strong>{result.sourceRowCount.toLocaleString('ja-JP')}行</strong></div>
-                <div><span>対象仕訳</span><strong>{result.targetEntries.length.toLocaleString('ja-JP')}件</strong></div>
+                <div><span>検出対象</span><strong>{result.detectedTargetCount.toLocaleString('ja-JP')}件</strong></div>
                 <div><span>対象外</span><strong>{result.ignoredRowCount.toLocaleString('ja-JP')}行</strong></div>
-                <div><span>仕入税額相当</span><strong>{formatYen(result.taxEquivalent)}</strong></div>
+                <div><span>仕入税額相当</span><strong>{formatYen(displayResult.taxEquivalent)}</strong></div>
               </div>
 
-              {(result.invalidTargetRowCount > 0 || result.assumedRateCount > 0 || periodSpan === null || periodSpan < 300 || result.hasOneHundredMillionSupplier) ? (
+              {(result.invalidTargetRowCount > 0
+                || result.assumedRateCount > 0
+                || result.csvTaxAmountCount > 0
+                || !assumptionsComplete
+                || !periodInput.confirmed
+                || result.sourceDateUnreadableRowCount > 0
+                || (isAnnualized && (displayResult.periodExcludedEntries.length > 0 || shortPeriod))) ? (
                 <Alert className="review-alert">
                   <AlertTriangle />
                   <AlertTitle>確認してから判断してください</AlertTitle>
                   <AlertDescription><ul>
-                    {result.invalidTargetRowCount > 0 ? <li>金額を読めなかった対象行が{result.invalidTargetRowCount}件あります。</li> : null}
-                    {result.assumedRateCount > 0 ? <li>税率・税額を取得できない{result.assumedRateCount}件は、{settings.defaultTaxRate}%で計算しました。</li> : null}
-                    {periodSpan === null ? <li>元CSVの日付を取得できないため、年間換算はできません。取引日列の指定を確認してください。</li> : null}
-                    {periodSpan !== null && periodSpan < 300 ? <li>元CSVの対象期間は{periodSpan}日です。年間換算は「CSV期間の影響 × 365 ÷ {periodSpan}」で計算しています。</li> : null}
-                    {result.hasOneHundredMillionSupplier ? <li>税込1億円を超える仕入先があります。経過措置の上限はこの試算に反映していません。</li> : null}
+                    {result.invalidTargetRowCount > 0 ? <li>金額を読めなかった対象明細が{result.invalidTargetRowCount}件あります。元CSV行番号は下の明細で確認できます。</li> : null}
+                    {result.assumedRateCount > 0 ? <li>税率を取得できない{result.assumedRateCount}件は、既定の{settings.defaultTaxRate}％で計算しました。</li> : null}
+                    {result.csvTaxAmountCount > 0 ? <li>CSV税額は経過措置適用後の値の場合があるため計算には使わず、取引金額と税率から100％相当額を算出しています。</li> : null}
+                    {!assumptionsComplete ? <li>左側の「試算前の確認」に未確認項目があります。</li> : null}
+                    {!periodInput.confirmed ? <li>年間換算には、CSVの抽出期間の確認が必要です。</li> : null}
+                    {result.sourceDateUnreadableRowCount > 0 ? <li>日付の形式を読めない元CSV行が{result.sourceDateUnreadableRowCount}行あります。</li> : null}
+                    {isAnnualized && displayResult.periodExcludedEntries.filter((entry) => entry.reason === 'date_missing_or_invalid').length > 0 ? <li>日付を読めない対象明細を{displayResult.periodExcludedEntries.filter((entry) => entry.reason === 'date_missing_or_invalid').length}件、年換算の分子から除外しました。</li> : null}
+                    {isAnnualized && displayResult.periodExcludedEntries.filter((entry) => entry.reason === 'outside_period').length > 0 ? <li>確認した集計期間外の対象明細を{displayResult.periodExcludedEntries.filter((entry) => entry.reason === 'outside_period').length}件、年換算の分子から除外しました。</li> : null}
+                    {isAnnualized && shortPeriod && periodSpan ? <li>{periodSpan}日間の仕入構成が一年続くと仮定して、「期間の影響 × 365 ÷ {periodSpan}」で年換算しています。</li> : null}
                   </ul></AlertDescription>
                 </Alert>
               ) : null}
 
               <Card className="detail-card">
-                <CardHeader><CardTitle>仕入先別の影響</CardTitle><CardDescription>「登録事業者なら」の差が大きい順です。差額は{isAnnualized ? '年間換算' : 'CSV期間'}で表示しています。</CardDescription></CardHeader>
+                <CardHeader>
+                  <CardTitle>仕入先別の影響</CardTitle>
+                  <CardDescription>全{displayResult.bySupplier.length.toLocaleString('ja-JP')}仕入先を表示。対象仕入は年換算前の集計期間額、差額は{isAnnualized ? '年間換算' : 'CSV期間'}です。</CardDescription>
+                </CardHeader>
                 <CardContent>
                   <Table>
-                    <TableHeader><TableRow><TableHead>仕入先</TableHead><TableHead className="text-right">対象仕入</TableHead><TableHead className="text-right">件数</TableHead><TableHead className="text-right">登録なら回避可能{isAnnualized ? '（年換算）' : ''}</TableHead></TableRow></TableHeader>
-                    <TableBody>{result.bySupplier.slice(0, 10).map((supplier) => (
-                      <TableRow key={supplier.partner}><TableCell className="max-w-[260px] truncate font-medium">{supplier.partner}</TableCell><TableCell className="text-right tabular-nums">{formatYen(supplier.grossAmount)}</TableCell><TableCell className="text-right tabular-nums">{supplier.transactionCount}</TableCell><TableCell className="text-right font-semibold tabular-nums text-[var(--teal-strong)]">{formatYen(supplier.registeredBenefit * displayFactor)}</TableCell></TableRow>
+                    <TableHeader><TableRow><TableHead>仕入先</TableHead><TableHead className="text-right">対象仕入（年換算前）</TableHead><TableHead className="text-right">件数</TableHead><TableHead className="text-right">{rateLabel(settings.beforeRate)}→{rateLabel(settings.afterRate)}の差{isAnnualized ? '（年換算）' : ''}</TableHead><TableHead className="text-right">{rateLabel(settings.afterRate)}→100％の差{isAnnualized ? '（年換算）' : ''}</TableHead></TableRow></TableHeader>
+                    <TableBody>{displayResult.bySupplier.map((supplier) => (
+                      <TableRow key={supplier.partner}><TableCell className="max-w-[260px] truncate font-medium">{supplier.partner}</TableCell><TableCell className="text-right tabular-nums">{formatYen(supplier.grossAmount)}</TableCell><TableCell className="text-right tabular-nums">{supplier.transactionCount}</TableCell><TableCell className="text-right font-semibold tabular-nums">{formatYen(supplier.transitionImpact * displayFactor)}</TableCell><TableCell className="text-right font-semibold tabular-nums text-[var(--teal-strong)]">{formatYen(supplier.registeredBenefit * displayFactor)}</TableCell></TableRow>
                     ))}</TableBody>
                   </Table>
                 </CardContent>
               </Card>
 
+              <Card className="detail-card entry-detail-card">
+                <CardHeader>
+                  <CardTitle>元仕訳の検算明細</CardTitle>
+                  <CardDescription>対象・計算除外を合わせて{detailRows.length.toLocaleString('ja-JP')}件。元CSVの物理行番号で追跡できます。</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader><TableRow><TableHead>元CSV行</TableHead><TableHead>日付</TableHead><TableHead>側</TableHead><TableHead>区分</TableHead><TableHead className="text-right">取引金額</TableHead><TableHead className="text-right">税率</TableHead><TableHead className="text-right">100％税額相当</TableHead><TableHead className="text-right">CSV税額</TableHead><TableHead>算定根拠・状態</TableHead></TableRow></TableHeader>
+                    <TableBody>{visibleDetailRows.map((row) => row.kind === 'valid' ? (
+                      <TableRow key={`valid-${row.entry.sourceRow}-${row.entry.mappingLabel}`}>
+                        <TableCell>{row.entry.sourceRow}</TableCell><TableCell>{formatDate(row.entry.date)}</TableCell><TableCell>{row.entry.mappingLabel}</TableCell><TableCell>{row.entry.taxCode}</TableCell><TableCell className="text-right tabular-nums">{formatYen(row.entry.amount)}</TableCell><TableCell className="text-right">{row.entry.taxRate}％{row.entry.rateAssumed ? '（既定）' : ''}</TableCell><TableCell className="text-right tabular-nums">{formatYen(row.entry.taxEquivalent)}</TableCell><TableCell className="text-right tabular-nums">{row.entry.csvTaxAmount === null ? '—' : formatYen(row.entry.csvTaxAmount)}</TableCell><TableCell>{periodIssueByEntry.get(`${row.entry.sourceRow}-${row.entry.mappingLabel}`) === 'outside_period' ? '年換算除外：集計期間外' : periodIssueByEntry.get(`${row.entry.sourceRow}-${row.entry.mappingLabel}`) === 'date_missing_or_invalid' ? '年換算除外：日付不明' : '取引金額＋税率'}</TableCell>
+                      </TableRow>
+                    ) : (
+                      <TableRow key={`invalid-${row.entry.sourceRow}-${row.entry.mappingLabel}`} className="invalid-detail-row">
+                        <TableCell>{row.entry.sourceRow}</TableCell><TableCell>{row.entry.rawDate || '—'}</TableCell><TableCell>{row.entry.mappingLabel}</TableCell><TableCell>{row.entry.taxCode}</TableCell><TableCell className="text-right">{row.entry.rawAmount || '—'}</TableCell><TableCell className="text-right">—</TableCell><TableCell className="text-right">—</TableCell><TableCell className="text-right">—</TableCell><TableCell>計算除外：{invalidReason(row.entry.reason)}</TableCell>
+                      </TableRow>
+                    ))}</TableBody>
+                  </Table>
+                  <div className="detail-pagination">
+                    <span>{detailPage + 1} / {detailPageCount}ページ（{detailRows.length.toLocaleString('ja-JP')}件）</span>
+                    <div><Button size="sm" variant="outline" disabled={detailPage === 0} onClick={() => setDetailPage((current) => Math.max(0, current - 1))}>前へ</Button><Button size="sm" variant="outline" disabled={detailPage >= detailPageCount - 1} onClick={() => setDetailPage((current) => Math.min(detailPageCount - 1, current + 1))}>次へ</Button></div>
+                  </div>
+                </CardContent>
+              </Card>
+
               <div className="code-grid">
                 {tkcContextPack.affectedTaxCodes.map((code) => {
-                  const item = result.byCode.find((summary) => summary.code === code);
+                  const item = displayResult.byCode.find((summary) => summary.code === code);
                   return <div className="code-card" key={code}><Badge variant="outline">課税区分 {code}</Badge><strong>{formatYen(item?.grossAmount ?? 0)}</strong><p>{tkcContextPack.taxCodeLabels[code]}</p></div>;
                 })}
               </div>
@@ -582,7 +864,7 @@ export function InvoiceImpactSimulator() {
               <Card className="assumption-card">
                 <CardHeader><CardTitle>この試算で分かること</CardTitle></CardHeader>
                 <CardContent className="assumption-grid">
-                  <div><CheckCircle2 /><span><strong>分かる</strong>経過措置率の変更による仕入控除税額の減少見込</span></div>
+                  <div><CheckCircle2 /><span><strong>分かる</strong>経過措置率の変更による仕入控除税額の増減見込</span></div>
                   <div><AlertTriangle /><span><strong>別途確認</strong>売上税額、端数処理、帳簿・請求書の保存要件、棚卸調整</span></div>
                   <div><ShieldCheck /><span><strong>計算の前提</strong>価格・取引条件が同じ場合の消費税上の比較</span></div>
                 </CardContent>

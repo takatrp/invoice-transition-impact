@@ -1,10 +1,13 @@
 import { tkcContextPack } from '../contextPacks/tkc.ts';
 import type {
+  AnalysisPeriod,
   AnalysisResult,
   AnalysisSettings,
   CsvData,
   EntryMapping,
+  InvalidTargetEntry,
   NormalizedEntry,
+  PeriodExcludedEntry,
   SupplierSummary,
 } from './types.ts';
 
@@ -93,35 +96,60 @@ function buildEntry(
   rowIndex: number,
   mapping: EntryMapping,
   settings: AnalysisSettings,
-): NormalizedEntry | null | 'invalid' {
+):
+  | { kind: 'ignored' }
+  | { kind: 'invalid'; issue: InvalidTargetEntry }
+  | { kind: 'valid'; entry: NormalizedEntry } {
   const rawCode = valueAt(row, mapping.taxCodeIndex);
   const taxCode = normalizeTaxCode(rawCode);
-  if (!taxCode || !targetCodes.has(taxCode)) return null;
+  if (!taxCode || !targetCodes.has(taxCode)) return { kind: 'ignored' };
 
-  const rawAmount = parseSignedAmount(valueAt(row, mapping.amountIndex));
-  if (rawAmount === null) return 'invalid';
+  const rawAmountValue = valueAt(row, mapping.amountIndex);
+  const rawAmount = parseSignedAmount(rawAmountValue);
+  const rawDate = valueAt(row, mapping.dateIndex);
+  const partner = valueAt(row, mapping.partnerIndex) || '仕入先未取得';
+  const description = valueAt(row, mapping.descriptionIndex);
+  if (rawAmount === null) {
+    return {
+      kind: 'invalid',
+      issue: {
+        sourceRow: rowIndex + 2,
+        taxCode,
+        rawAmount: rawAmountValue,
+        rawDate,
+        date: normalizeDate(rawDate),
+        partner,
+        description,
+        mappingLabel: mapping.label,
+        reason: rawAmountValue.trim() ? 'amount_invalid' : 'amount_missing',
+      },
+    };
+  }
   const amount = rawAmount * mapping.sign;
   const parsedRate = parseTaxRate(valueAt(row, mapping.taxRateIndex));
   const taxRate = parsedRate ?? settings.defaultTaxRate;
   const rawTaxAmount = parseSignedAmount(valueAt(row, mapping.taxAmountIndex));
-  const taxAmountUsed = rawTaxAmount !== null && rawTaxAmount !== 0;
-  const taxEquivalent = taxAmountUsed
+  const csvTaxAmount = rawTaxAmount !== null && rawTaxAmount !== 0
     ? Math.abs(rawTaxAmount) * Math.sign(amount || mapping.sign)
-    : taxFromAmount(amount, taxRate, settings.amountMode);
+    : null;
+  const taxEquivalent = taxFromAmount(amount, taxRate, settings.amountMode);
 
-  const partner = valueAt(row, mapping.partnerIndex) || '仕入先未取得';
   return {
-    sourceRow: rowIndex + 2,
-    taxCode,
-    amount,
-    taxRate,
-    taxEquivalent,
-    date: normalizeDate(valueAt(row, mapping.dateIndex)),
-    partner,
-    description: valueAt(row, mapping.descriptionIndex),
-    mappingLabel: mapping.label,
-    rateAssumed: parsedRate === null && !taxAmountUsed,
-    taxAmountUsed,
+    kind: 'valid',
+    entry: {
+      sourceRow: rowIndex + 2,
+      taxCode,
+      amount,
+      taxRate,
+      taxEquivalent,
+      date: normalizeDate(rawDate),
+      partner,
+      description,
+      mappingLabel: mapping.label,
+      rateAssumed: parsedRate === null,
+      csvTaxAmount,
+      taxEquivalentSource: 'amount_and_rate',
+    },
   };
 }
 
@@ -132,30 +160,59 @@ function emptySupplier(partner: string): SupplierSummary {
     grossAmount: 0,
     taxEquivalent: 0,
     allocatedTax: 0,
+    beforeCredit: 0,
     afterCredit: 0,
     registeredCredit: 0,
+    transitionImpact: 0,
     registeredBenefit: 0,
   };
+}
+
+function isWithinPeriod(date: string, period: AnalysisPeriod): boolean {
+  return date >= period.start && date <= period.end;
 }
 
 export function analyzeCsv(
   csv: CsvData,
   mappings: EntryMapping[],
   settings: AnalysisSettings,
+  period: AnalysisPeriod | null = null,
 ): AnalysisResult {
   const targetEntries: NormalizedEntry[] = [];
-  let invalidTargetRowCount = 0;
+  const invalidTargetEntries: InvalidTargetEntry[] = [];
+  const periodExcludedEntries: PeriodExcludedEntry[] = [];
   const rowHasTarget = new Set<number>();
+  let detectedTargetCount = 0;
 
   csv.rows.forEach((row, rowIndex) => {
     mappings.forEach((mapping) => {
-      const entry = buildEntry(row, rowIndex, mapping, settings);
-      if (entry === 'invalid') {
-        invalidTargetRowCount += 1;
+      const built = buildEntry(row, rowIndex, mapping, settings);
+      if (built.kind === 'invalid') {
+        detectedTargetCount += 1;
+        invalidTargetEntries.push(built.issue);
         rowHasTarget.add(rowIndex);
-      } else if (entry) {
-        targetEntries.push(entry);
+      } else if (built.kind === 'valid') {
+        detectedTargetCount += 1;
         rowHasTarget.add(rowIndex);
+        if (period && !built.entry.date) {
+          periodExcludedEntries.push({
+            sourceRow: built.entry.sourceRow,
+            taxCode: built.entry.taxCode,
+            date: null,
+            mappingLabel: built.entry.mappingLabel,
+            reason: 'date_missing_or_invalid',
+          });
+        } else if (period && !isWithinPeriod(built.entry.date as string, period)) {
+          periodExcludedEntries.push({
+            sourceRow: built.entry.sourceRow,
+            taxCode: built.entry.taxCode,
+            date: built.entry.date,
+            mappingLabel: built.entry.mappingLabel,
+            reason: 'outside_period',
+          });
+        } else {
+          targetEntries.push(built.entry);
+        }
       }
     });
   });
@@ -191,8 +248,10 @@ export function analyzeCsv(
     supplier.grossAmount += entry.amount;
     supplier.taxEquivalent += entry.taxEquivalent;
     supplier.allocatedTax += allocated;
+    supplier.beforeCredit += before;
     supplier.afterCredit += after;
     supplier.registeredCredit += registered;
+    supplier.transitionImpact = supplier.beforeCredit - supplier.afterCredit;
     supplier.registeredBenefit = supplier.registeredCredit - supplier.afterCredit;
     bySupplierMap.set(entry.partner, supplier);
 
@@ -201,8 +260,10 @@ export function analyzeCsv(
     code.grossAmount += entry.amount;
     code.taxEquivalent += entry.taxEquivalent;
     code.allocatedTax += allocated;
+    code.beforeCredit += before;
     code.afterCredit += after;
     code.registeredCredit += registered;
+    code.transitionImpact = code.beforeCredit - code.afterCredit;
     code.registeredBenefit = code.registeredCredit - code.afterCredit;
     byCodeMap.set(entry.taxCode, code);
   });
@@ -211,10 +272,13 @@ export function analyzeCsv(
     .map((entry) => entry.date)
     .filter((date): date is string => date !== null)
     .sort();
-  const sourceDates = csv.rows
-    .flatMap((row) =>
-      mappings.map((mapping) => normalizeDate(valueAt(row, mapping.dateIndex))),
-    )
+  const sourceDateValues = csv.rows.map((row) => {
+    const dateIndex = mappings.find((mapping) => mapping.dateIndex !== null)?.dateIndex ?? null;
+    const rawDate = valueAt(row, dateIndex);
+    return { rawDate, date: normalizeDate(rawDate) };
+  });
+  const sourceDates = sourceDateValues
+    .map(({ date }) => date)
     .filter((date): date is string => date !== null)
     .sort();
   const bySupplier = [...bySupplierMap.values()].sort(
@@ -223,11 +287,14 @@ export function analyzeCsv(
 
   return {
     sourceRowCount: csv.rows.length,
+    detectedTargetCount,
     targetEntries,
+    invalidTargetEntries,
+    periodExcludedEntries,
     ignoredRowCount: csv.rows.length - rowHasTarget.size,
-    invalidTargetRowCount,
+    invalidTargetRowCount: invalidTargetEntries.length,
     assumedRateCount: targetEntries.filter((entry) => entry.rateAssumed).length,
-    taxAmountUsedCount: targetEntries.filter((entry) => entry.taxAmountUsed).length,
+    csvTaxAmountCount: targetEntries.filter((entry) => entry.csvTaxAmount !== null).length,
     grossAmount,
     taxEquivalent,
     allocatedTax,
@@ -244,6 +311,10 @@ export function analyzeCsv(
     dateMax: dates.at(-1) ?? null,
     sourceDateMin: sourceDates.at(0) ?? null,
     sourceDateMax: sourceDates.at(-1) ?? null,
+    sourceDateUnreadableRowCount: sourceDateValues.filter(
+      ({ rawDate, date }) => rawDate !== '' && date === null,
+    ).length,
+    analysisPeriod: period,
     hasOneHundredMillionSupplier: bySupplier.some(
       (supplier) => supplier.partner !== '仕入先未取得' && supplier.grossAmount > 100_000_000,
     ),

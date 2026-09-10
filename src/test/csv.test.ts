@@ -6,6 +6,7 @@ import {
   inferMappings,
   isTkcJournalFormat,
   parseCsv,
+  validateCsvRows,
 } from '../domain/csv.ts';
 
 void test('引用符、カンマ、セル内改行を含むCSVを読む', () => {
@@ -18,6 +19,14 @@ void test('引用符、カンマ、セル内改行を含むCSVを読む', () => 
 
 void test('UTF-8 BOMを認識する', () => {
   assert.equal(detectCsvEncoding(new Uint8Array([0xef, 0xbb, 0xbf, 0x31])), 'UTF-8');
+});
+
+void test('閉じていない引用符をエラーにする', () => {
+  assert.throws(() => parseCsv('課税区分,摘要\n52,"未完了'), /引用符が閉じられていません/);
+});
+
+void test('見出しと列数が違う行をエラーにする', () => {
+  assert.throws(() => validateCsvRows([['a', 'b'], ['1']]), /2行目/);
 });
 
 void test('一般的な単一列形式を自動対応する', () => {

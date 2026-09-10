@@ -29,6 +29,33 @@ export type EntryMapping = {
   sign: 1 | -1;
 };
 
+export type InvalidTargetReason = 'amount_missing' | 'amount_invalid';
+
+export type InvalidTargetEntry = {
+  sourceRow: number;
+  taxCode: string;
+  rawAmount: string;
+  rawDate: string;
+  date: string | null;
+  partner: string;
+  description: string;
+  mappingLabel: string;
+  reason: InvalidTargetReason;
+};
+
+export type PeriodExcludedEntry = {
+  sourceRow: number;
+  taxCode: string;
+  date: string | null;
+  mappingLabel: string;
+  reason: 'date_missing_or_invalid' | 'outside_period';
+};
+
+export type AnalysisPeriod = {
+  start: string;
+  end: string;
+};
+
 export type NormalizedEntry = {
   sourceRow: number;
   taxCode: string;
@@ -40,7 +67,8 @@ export type NormalizedEntry = {
   description: string;
   mappingLabel: string;
   rateAssumed: boolean;
-  taxAmountUsed: boolean;
+  csvTaxAmount: number | null;
+  taxEquivalentSource: 'amount_and_rate';
 };
 
 export type AnalysisSettings = {
@@ -58,8 +86,10 @@ export type SupplierSummary = {
   grossAmount: number;
   taxEquivalent: number;
   allocatedTax: number;
+  beforeCredit: number;
   afterCredit: number;
   registeredCredit: number;
+  transitionImpact: number;
   registeredBenefit: number;
 };
 
@@ -69,11 +99,14 @@ export type CodeSummary = SupplierSummary & {
 
 export type AnalysisResult = {
   sourceRowCount: number;
+  detectedTargetCount: number;
   targetEntries: NormalizedEntry[];
+  invalidTargetEntries: InvalidTargetEntry[];
+  periodExcludedEntries: PeriodExcludedEntry[];
   ignoredRowCount: number;
   invalidTargetRowCount: number;
   assumedRateCount: number;
-  taxAmountUsedCount: number;
+  csvTaxAmountCount: number;
   grossAmount: number;
   taxEquivalent: number;
   allocatedTax: number;
@@ -88,5 +121,7 @@ export type AnalysisResult = {
   dateMax: string | null;
   sourceDateMin: string | null;
   sourceDateMax: string | null;
+  sourceDateUnreadableRowCount: number;
+  analysisPeriod: AnalysisPeriod | null;
   hasOneHundredMillionSupplier: boolean;
 };
