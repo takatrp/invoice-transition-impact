@@ -2,6 +2,11 @@
 
 1年分の仕訳CSVから課税区分52・62・72を抽出し、免税事業者等からの課税仕入れに係る経過措置率の変更が、仕入控除税額へ与える影響を概算するブラウザツールです。
 
+## 公開URL
+
+- GitHub Pages: https://takatrp.github.io/invoice-transition-impact/
+- Sites: https://invoice-transition-impact.takatrp0222.chatgpt.site/
+
 ## 主な機能
 
 - UTF-8 / Shift_JISのCSVをブラウザ内だけで解析
