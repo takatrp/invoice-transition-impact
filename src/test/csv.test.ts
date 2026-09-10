@@ -86,6 +86,37 @@ void test('借方・貸方形式は二つの読み取り設定を作る', () => 
   assert.equal(mappings[1].sign, -1);
 });
 
+void test('片側の課税区分列に対応する金額列がなくても読み取り設定を省略しない', () => {
+  const headers = [
+    '借方課税区分',
+    '借方取引金額',
+    '貸方課税区分',
+  ];
+  const mappings = inferMappings(headers);
+  assert.equal(mappings.length, 2);
+  assert.equal(mappings[1].label, '貸方');
+  assert.equal(mappings[1].taxCodeIndex, 2);
+  assert.equal(mappings[1].amountIndex, null);
+
+  const reverseMappings = inferMappings([
+    '借方課税区分',
+    '貸方課税区分',
+    '貸方取引金額',
+  ]);
+  assert.equal(reverseMappings.length, 2);
+  assert.equal(reverseMappings[0].label, '借方');
+  assert.equal(reverseMappings[0].amountIndex, null);
+
+  const missingTaxCodeMappings = inferMappings([
+    '借方課税区分',
+    '借方取引金額',
+    '貸方取引金額',
+  ]);
+  assert.equal(missingTaxCodeMappings.length, 2);
+  assert.equal(missingTaxCodeMappings[1].label, '貸方');
+  assert.equal(missingTaxCodeMappings[1].taxCodeIndex, null);
+});
+
 void test('実際のTKC仕訳帳49列形式から必要な列を自動設定する', () => {
   const headers = [
     '月日',

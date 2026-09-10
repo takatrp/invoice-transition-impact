@@ -268,7 +268,105 @@ void test('税率を仮定した表示額は全確認済みでも参考値にす
     isReference: true,
     assumedRateCount: 1,
     missingDateExcludedCount: 0,
+    supplierLimitReason: null,
   });
+});
+
+void test('短期間の年換算で1仕入先の税込支払総額が1億円を超える見込みなら参考値にする', () => {
+  const parsed = parseCsv('日付,課税区分,税込金額,税率,取引先\n2026/10/1,52,33000000,10%,A社');
+  const csv: CsvData = { fileName: 'annualized-limit.csv', encoding: 'UTF-8', headers: parsed[0], rows: parsed.slice(1) };
+  const result = analyzeCsv(csv, inferMappings(csv.headers), settings, { start: '2026-10-01', end: '2026-12-31' });
+  const annualizationFactor = 365 / 92;
+  const status = getResultStatus(result, {
+    assumptionsComplete: true,
+    isAnnualized: true,
+    annualizationFactor,
+  });
+
+  assert.equal(result.hasOneHundredMillionSupplier, false);
+  assert.equal(Math.round(result.bySupplier[0].grossPaymentAmount * annualizationFactor), 130_923_913);
+  assert.equal(Math.round(result.transitionImpact * annualizationFactor), 1_190_217);
+  assert.equal(status.label, '上限未反映の参考値');
+  assert.equal(status.isReference, true);
+  assert.equal(status.supplierLimitReason, 'annualized');
+  assert.equal(getResultStatus(result, {
+    assumptionsComplete: true,
+    isAnnualized: false,
+    annualizationFactor,
+  }).supplierLimitReason, null);
+});
+
+void test('年換算の1仕入先1億円判定は境界値と仕入先単位を守る', () => {
+  const exact = parseCsv('日付,課税区分,税込金額,税率,取引先\n2026/10/1,52,20000000,10%,A社');
+  const over = parseCsv('日付,課税区分,税込金額,税率,取引先\n2026/10/1,52,20000001,10%,A社');
+  const separate = parseCsv([
+    '日付,課税区分,税込金額,税率,取引先',
+    '2026/10/1,52,12000000,10%,A社',
+    '2026/10/2,52,12000000,10%,B社',
+  ].join('\n'));
+  const factor = 5;
+  const statusFor = (rows: string[][]) => {
+    const csv: CsvData = { fileName: 'boundary.csv', encoding: 'UTF-8', headers: rows[0], rows: rows.slice(1) };
+    return getResultStatus(analyzeCsv(csv, inferMappings(csv.headers), settings), {
+      assumptionsComplete: true,
+      isAnnualized: true,
+      annualizationFactor: factor,
+    });
+  };
+
+  assert.equal(statusFor(exact).supplierLimitReason, null);
+  assert.equal(statusFor(over).supplierLimitReason, 'annualized');
+  assert.equal(statusFor(separate).supplierLimitReason, null);
+
+  const unnamed = parseCsv('日付,課税区分,税込金額,税率,取引先\n2026/10/1,52,20000001,10%,');
+  assert.equal(statusFor(unnamed).supplierLimitReason, null);
+});
+
+void test('税抜・複数税率でも税込支払総額を使って年換算の1億円超を判定する', () => {
+  const parsed = parseCsv([
+    '日付,課税区分,税抜金額,税率,取引先',
+    '2026/10/1,52,10000000,10%,A社',
+    '2026/10/2,52,10000000,8%,A社',
+  ].join('\n'));
+  const csv: CsvData = { fileName: 'annualized-net.csv', encoding: 'UTF-8', headers: parsed[0], rows: parsed.slice(1) };
+  const result = analyzeCsv(csv, inferMappings(csv.headers), { ...settings, amountMode: 'excluded' });
+  const status = getResultStatus(result, {
+    assumptionsComplete: true,
+    isAnnualized: true,
+    annualizationFactor: 5,
+  });
+
+  assert.equal(result.bySupplier[0].grossPaymentAmount, 21_800_000);
+  assert.equal(status.supplierLimitReason, 'annualized');
+});
+
+void test('期間実績の1億円超は年換算倍率が1未満でも維持し、期間外仕入は年換算判定から除く', () => {
+  const actualOver = parseCsv('日付,課税区分,税込金額,税率,取引先\n2026/10/1,52,100000001,10%,A社');
+  const actualCsv: CsvData = { fileName: 'actual-over.csv', encoding: 'UTF-8', headers: actualOver[0], rows: actualOver.slice(1) };
+  const actualStatus = getResultStatus(analyzeCsv(actualCsv, inferMappings(actualCsv.headers), settings), {
+    assumptionsComplete: true,
+    isAnnualized: true,
+    annualizationFactor: 0.5,
+  });
+  assert.equal(actualStatus.supplierLimitReason, 'period');
+
+  const withOutside = parseCsv([
+    '日付,課税区分,税込金額,税率,取引先',
+    '2026/10/1,52,1000000,10%,A社',
+    '2026/09/30,52,50000000,10%,A社',
+  ].join('\n'));
+  const outsideCsv: CsvData = { fileName: 'outside.csv', encoding: 'UTF-8', headers: withOutside[0], rows: withOutside.slice(1) };
+  const periodResult = analyzeCsv(outsideCsv, inferMappings(outsideCsv.headers), settings, {
+    start: '2026-10-01',
+    end: '2026-10-31',
+  });
+  const outsideStatus = getResultStatus(periodResult, {
+    assumptionsComplete: true,
+    isAnnualized: true,
+    annualizationFactor: 365 / 31,
+  });
+  assert.equal(periodResult.bySupplier[0].grossPaymentAmount, 1_000_000);
+  assert.equal(outsideStatus.supplierLimitReason, null);
 });
 
 void test('年換算で日付不明を除外した表示額は参考値、期間外除外だけなら確認済みにする', () => {

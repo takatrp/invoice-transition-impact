@@ -130,6 +130,15 @@ function fullRateLabel(value: RatePreset): string {
   return transitionRateOptions.find((option) => option.value === value)?.label ?? rateLabel(value);
 }
 
+function uncheckedAssumptions() {
+  return {
+    generalTaxation: false,
+    calculationMethod: false,
+    amountMode: false,
+    specialTransactions: false,
+  };
+}
+
 function csvHeaderLabel(headers: string[], index: number): string {
   return headers[index] || `列 ${index + 1}`;
 }
@@ -152,11 +161,11 @@ function ColumnSelect({ label, value, headers, optional, onChange }: ColumnSelec
       >
         <SelectTrigger className="h-10 w-full bg-white" aria-label={`${label}の列`}>
           <SelectValue>
-            {value === null ? '使用しない' : csvHeaderLabel(headers, value)}
+            {value === null ? (optional ? '使用しない' : '未設定') : csvHeaderLabel(headers, value)}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          {optional ? <SelectItem value="none">使用しない</SelectItem> : null}
+          <SelectItem value="none">{optional ? '使用しない' : '未設定'}</SelectItem>
           {headers.map((header, index) => (
             <SelectItem key={`${header}-${index}`} value={String(index)}>
               {header || `列 ${index + 1}`}
@@ -228,12 +237,7 @@ export function InvoiceImpactSimulator() {
     confirmed: false,
     shortPeriodConfirmed: false,
   });
-  const [assumptionChecks, setAssumptionChecks] = useState({
-    generalTaxation: false,
-    calculationMethod: false,
-    amountMode: false,
-    specialTransactions: false,
-  });
+  const [assumptionChecks, setAssumptionChecks] = useState(uncheckedAssumptions);
   const [detailPage, setDetailPage] = useState(0);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState('');
@@ -291,7 +295,11 @@ export function InvoiceImpactSimulator() {
   const laterRates = scheduleRates.slice(currentScheduleIndex + 2);
   const assumptionsComplete = Object.values(assumptionChecks).every(Boolean);
   const resultStatus = displayResult
-    ? getResultStatus(displayResult, { assumptionsComplete, isAnnualized })
+    ? getResultStatus(displayResult, {
+        assumptionsComplete,
+        isAnnualized,
+        annualizationFactor: displayFactor,
+      })
     : null;
   const detailRows = useMemo(() => {
     if (!result) return [];
@@ -313,7 +321,16 @@ export function InvoiceImpactSimulator() {
     ]),
   ), [annualizedResult]);
 
-  useEffect(() => registerInvoiceComparisonTool(setSettings), []);
+  useEffect(
+    () => registerInvoiceComparisonTool(
+      setSettings,
+      () => setAssumptionChecks((current) => ({
+        ...current,
+        calculationMethod: false,
+      })),
+    ),
+    [],
+  );
 
   useEffect(() => {
     if (!result) return;
@@ -342,12 +359,7 @@ export function InvoiceImpactSimulator() {
       setCsv(loaded);
       setMappings(inferMappings(loaded.headers));
       setIsSample(false);
-      setAssumptionChecks({
-        generalTaxation: false,
-        calculationMethod: false,
-        amountMode: false,
-        specialTransactions: false,
-      });
+      setAssumptionChecks(uncheckedAssumptions());
       setError('');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'CSVを読み取れませんでした。');
@@ -360,12 +372,7 @@ export function InvoiceImpactSimulator() {
     setMappings(inferMappings(sample.headers));
     setSettings(createDefaultSettings());
     setDisplayMode('period');
-    setAssumptionChecks({
-      generalTaxation: false,
-      calculationMethod: false,
-      amountMode: false,
-      specialTransactions: false,
-    });
+    setAssumptionChecks(uncheckedAssumptions());
     setIsSample(true);
     setError('');
   }
@@ -376,6 +383,7 @@ export function InvoiceImpactSimulator() {
         mappingIndex === index ? { ...mapping, ...patch } : mapping,
       ),
     );
+    setAssumptionChecks(uncheckedAssumptions());
   }
 
   return (
@@ -747,11 +755,13 @@ export function InvoiceImpactSimulator() {
                 <span>確認 {Object.values(assumptionChecks).filter(Boolean).length}/4</span>
               </div>
 
-              {displayResult.hasOneHundredMillionSupplier ? (
+              {resultStatus?.supplierLimitReason ? (
                 <Alert className="reference-banner">
                   <AlertTriangle />
                   <AlertTitle>1仕入先ごとの控除限度額を反映していない参考値です</AlertTitle>
-                  <AlertDescription>税込支払総額が1億円を超える仕入先を検出しました。この限度額は2026年10月1日以後に開始する課税期間から適用されます。課税期間の開始日などを確認し、別途上限計算を行ってください。</AlertDescription>
+                  <AlertDescription>{resultStatus.supplierLimitReason === 'annualized'
+                    ? '集計期間の仕入を年換算すると、税込支払総額が1億円を超える見込みの仕入先があります。年換算は傾向把握のための推計です。実際の課税期間の金額を確認し、別途上限計算を行ってください。'
+                    : '税込支払総額が1億円を超える仕入先を検出しました。この限度額は2026年10月1日以後に開始する課税期間から適用されます。課税期間の開始日などを確認し、別途上限計算を行ってください。'}</AlertDescription>
                 </Alert>
               ) : null}
 
@@ -802,6 +812,8 @@ export function InvoiceImpactSimulator() {
                   <AlertDescription><ul>
                     {result.invalidTargetRowCount > 0 ? <li>金額を読めなかった対象明細が{result.invalidTargetRowCount}件あります。開始物理行とデータ行は下の明細で確認できます。</li> : null}
                     {displayResult.assumedRateCount > 0 ? <li>税率を取得できない{displayResult.assumedRateCount}件は、既定の{settings.defaultTaxRate}％で計算した参考値です。</li> : null}
+                    {resultStatus?.supplierLimitReason === 'annualized' ? <li>仕入先別の税込支払総額も同じ倍率で年換算すると、1億円を超える見込みの仕入先があります。表示額には控除限度額を反映していません。</li> : null}
+                    {resultStatus?.supplierLimitReason === 'period' ? <li>税込支払総額が1億円を超える仕入先があります。表示額には控除限度額を反映していません。</li> : null}
                     {result.csvTaxAmountCount > 0 ? <li>CSV税額は経過措置適用後の値の場合があるため計算には使わず、取引金額と税率から100％相当額を算出しています。</li> : null}
                     {!assumptionsComplete ? <li>左側の「試算前の確認」に未確認項目があります。</li> : null}
                     {!periodInput.confirmed ? <li>年間換算には、CSVの抽出期間の確認が必要です。</li> : null}

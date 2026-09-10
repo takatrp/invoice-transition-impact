@@ -154,7 +154,7 @@ export function inferMappings(headers: string[]): EntryMapping[] {
   const creditAmount = findHeader(headers, split.creditAmount);
 
   const mappings: EntryMapping[] = [];
-  if (debitTaxCode !== null && debitAmount !== null) {
+  if (debitTaxCode !== null || debitAmount !== null) {
     mappings.push({
       label: '借方',
       taxCodeIndex: debitTaxCode,
@@ -169,7 +169,7 @@ export function inferMappings(headers: string[]): EntryMapping[] {
       sign: 1,
     });
   }
-  if (creditTaxCode !== null && creditAmount !== null) {
+  if (creditTaxCode !== null || creditAmount !== null) {
     mappings.push({
       label: '貸方',
       taxCodeIndex: creditTaxCode,
