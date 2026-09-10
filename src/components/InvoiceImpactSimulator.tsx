@@ -721,12 +721,11 @@ export function InvoiceImpactSimulator() {
               <div className="impact-hero">
                 <div className="impact-copy">
                   <span>{rateLabel(settings.beforeRate)} → {rateLabel(settings.afterRate)}・{isAnnualized ? '年間換算' : 'CSV期間'}</span>
-                  <div className={`result-quality-note ${resultStatus?.isReference ? 'is-warning' : ''}`}>{resultStatus?.label}</div>
                   <h3>{impactHeading(displayResult.transitionImpact)}<strong>{formatYen(Math.abs(displayResult.transitionImpact * displayFactor))}</strong></h3>
                   {isAnnualized && periodSpan ? (
-                    <p>この仕入構成が一年続くと仮定した年換算影響：集計期間の影響 {formatYen(displayResult.transitionImpact)} × 365日 ÷ {periodSpan}日</p>
+                    <p>{periodSpan}日間の実績から365日へ換算した概算です。</p>
                   ) : (
-                    <p>元CSVに含まれる対象仕訳について、仕入控除税額の増減を比較した概算です。</p>
+                    <p>CSV期間内の対象仕訳から計算した概算です。</p>
                   )}
                 </div>
               </div>
