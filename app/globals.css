@@ -368,6 +368,11 @@
   .detail-card:not(.entry-detail-card) td:nth-child(5)::before { content: '登録事業者との差額'; }
 }
 
+.app-shell { --content-max-width: 1600px; --content-gutter: 24px; }
+.topbar, .workspace-grid { width: min(var(--content-max-width), 100%); margin-inline: auto; padding-inline: var(--content-gutter); }
+.transition-strip { padding-inline: max(var(--content-gutter), calc((100% - var(--content-max-width)) / 2 + var(--content-gutter))); }
+@media (max-width: 760px) { .app-shell { --content-gutter: 16px; } }
+
 @page {
   size: A4 portrait;
   margin: 9mm;
