@@ -434,9 +434,15 @@ export function InvoiceImpactSimulator() {
 
       <div className="workspace-grid">
         <aside className="control-column">
+          <Dialog>
           <Card className="upload-card">
             <CardHeader>
-              <div className="section-kicker">手順 1</div>
+              <div className="upload-heading-row">
+                <div className="section-kicker">手順 1</div>
+                <DialogTrigger render={<Button size="sm" className="csv-guide-button" />}>
+                  <FileSpreadsheet />CSV切出方法
+                </DialogTrigger>
+              </div>
               <CardTitle className="text-lg">仕訳CSVを入れる</CardTitle>
               <CardDescription>
                 課税区分52・62・72の仕訳だけを抽出します。
@@ -473,10 +479,6 @@ export function InvoiceImpactSimulator() {
                 />
               </div>
 
-              <Dialog>
-                <DialogTrigger render={<Button variant="outline" className="mt-3 w-full" />}>
-                  <FileSpreadsheet />仕訳CSVの切出方法
-                </DialogTrigger>
                 <DialogContent className="csv-guide-dialog" showCloseButton={false}>
                   <div className="flex items-center justify-between gap-4">
                     <DialogTitle>仕訳CSVの切出方法</DialogTitle>
@@ -488,7 +490,6 @@ export function InvoiceImpactSimulator() {
                   </a>
                   <p className="text-sm text-muted-foreground">画像をクリックすると別タブで原寸表示できます。</p>
                 </DialogContent>
-              </Dialog>
 
               {error ? (
                 <Alert variant="destructive" className="mt-4">
@@ -545,6 +546,7 @@ export function InvoiceImpactSimulator() {
             </CardContent>
           </Card>
 
+          </Dialog>
           <Card className="settings-card">
             <CardHeader>
               <div className="section-kicker">手順 2</div>

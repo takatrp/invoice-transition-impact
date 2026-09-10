@@ -373,6 +373,9 @@
 .transition-strip { padding-inline: max(var(--content-gutter), calc((100% - var(--content-max-width)) / 2 + var(--content-gutter))); }
 @media (max-width: 760px) { .app-shell { --content-gutter: 16px; } }
 
+.upload-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.csv-guide-button[data-slot='button'] { background: #b45309; color: #fff; border: 1px solid #92400e; font-weight: 700; white-space: nowrap; }
+.csv-guide-button[data-slot='button']:hover { background: #92400e; }
 .csv-guide-dialog[data-slot='dialog-content'] { width: calc(100vw - 32px); max-width: 1500px; max-height: 90dvh; overflow-y: auto; }
 
 @page {
