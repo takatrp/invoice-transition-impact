@@ -11,6 +11,7 @@ import {
   FileCheck2,
   FileSpreadsheet,
   LockKeyhole,
+  Printer,
   RefreshCcw,
   ShieldCheck,
   UploadCloud,
@@ -301,6 +302,18 @@ export function InvoiceImpactSimulator() {
         annualizationFactor: displayFactor,
       })
     : null;
+  const printReady = Boolean(
+    result
+      && displayResult
+      && resultStatus
+      && displayResult.targetEntries.length > 0,
+  );
+  const printSupplierRows = displayResult?.bySupplier.slice(0, 5) ?? [];
+  const printPeriodLabel = result
+    ? isAnnualized
+      ? `${formatDate(periodInput.start)} ～ ${formatDate(periodInput.end)}`
+      : `${formatDate(result.sourceDateMin)} ～ ${formatDate(result.sourceDateMax)}`
+    : '－';
   const detailRows = useMemo(() => {
     if (!result) return [];
     return [
@@ -399,14 +412,28 @@ export function InvoiceImpactSimulator() {
           <div className="brand-mark" aria-hidden="true">
             <img src="./forstaff.png" alt="" />
           </div>
-          <div>
+          <div className="brand-copy">
             <p>松本会計ツール</p>
             <h1>インボイス経過措置 影響シミュレーター</h1>
+            <span className="header-lead">仕訳CSVから経過措置率の変更と登録事業者との差を概算します。</span>
           </div>
         </a>
-        <div className="privacy-pill">
-          <LockKeyhole />
-          CSVは端末内だけで処理
+        <div className="header-actions">
+          <div className="privacy-pill">
+            <LockKeyhole />
+            CSVは端末内だけで処理
+          </div>
+          <Button
+            type="button"
+            className="print-button"
+            disabled={!printReady}
+            title={printReady ? '印刷画面からPDFとして保存できます' : '試算結果が表示されると印刷できます'}
+            onClick={() => window.print()}
+          >
+            <Printer />
+            印刷/PDF
+          </Button>
+          <span className="header-version">{appMeta.version}</span>
         </div>
       </header>
 
@@ -885,16 +912,110 @@ export function InvoiceImpactSimulator() {
         </section>
       </div>
 
+      <section className="print-report" aria-label="印刷用試算結果">
+        {result && displayResult && resultStatus ? (
+          <article className="print-sheet">
+            <header className="print-header">
+              <img src="./forstaff.png" alt="" />
+              <div>
+                <p>松本会計ツール</p>
+                <h1>インボイス経過措置 影響シミュレーター</h1>
+                <span>試算結果サマリー</span>
+              </div>
+              <div className="print-document-meta">
+                <strong>{appMeta.version}</strong>
+                <span>出力日 {formatDate(localToday())}</span>
+              </div>
+            </header>
+
+            <section className="print-source-grid" aria-label="試算条件">
+              <div><span>元CSV</span><strong>{csv.fileName}</strong></div>
+              <div><span>集計対象期間</span><strong>{printPeriodLabel}</strong></div>
+              <div><span>表示区分</span><strong>{isAnnualized ? `年間換算${periodSpan ? `（${periodSpan}日→365日）` : ''}` : 'CSV期間'}</strong></div>
+              <div><span>計算方法</span><strong>{calculationMethodLabel(settings.calculationMethod)}</strong></div>
+              <div><span>対象</span><strong>{displayResult.targetEntries.length.toLocaleString('ja-JP')}件 / {displayResult.bySupplier.length.toLocaleString('ja-JP')}仕入先</strong></div>
+              <div><span>CSV金額</span><strong>{settings.amountMode === 'included' ? '税込' : '税抜（本体金額）'}</strong></div>
+            </section>
+
+            <section className={`print-impact ${resultStatus.isReference ? 'is-warning' : ''}`}>
+              <div>
+                <span>{rateLabel(settings.beforeRate)} → {rateLabel(settings.afterRate)}・{isAnnualized ? '年間換算' : 'CSV期間'}</span>
+                <strong>{impactHeading(displayResult.transitionImpact)}</strong>
+                <small>{resultStatus.label}</small>
+              </div>
+              <p>{formatYen(Math.abs(displayResult.transitionImpact * displayFactor))}</p>
+            </section>
+
+            <section className="print-scenario-grid" aria-label="仕入控除税額の比較">
+              <div><span>変更前 {rateLabel(settings.beforeRate)}</span><strong>{formatYen(displayResult.beforeCredit * displayFactor)}</strong></div>
+              <div><span>変更後 {rateLabel(settings.afterRate)}</span><strong>{formatYen(displayResult.afterCredit * displayFactor)}</strong></div>
+              <div><span>登録事業者 100％</span><strong>{formatYen(displayResult.registeredCredit * displayFactor)}</strong></div>
+            </section>
+
+            <section className="print-registered-benefit">
+              <div>
+                <span>同一価格・同一取引条件、適格請求書を保存できる前提</span>
+                <strong>変更後の未登録仕入先と登録事業者との仕入控除税額差</strong>
+              </div>
+              <p>{formatYen(displayResult.registeredBenefit * displayFactor)}</p>
+            </section>
+
+            <section className="print-suppliers">
+              <div className="print-section-heading">
+                <h2>仕入先別の影響</h2>
+                <span>{displayResult.bySupplier.length > 5 ? `影響額上位5件 / 全${displayResult.bySupplier.length.toLocaleString('ja-JP')}仕入先` : `全${displayResult.bySupplier.length.toLocaleString('ja-JP')}仕入先`}</span>
+              </div>
+              <table>
+                <thead><tr><th>仕入先</th><th>対象仕入（期間額）</th><th>{rateLabel(settings.beforeRate)}→{rateLabel(settings.afterRate)}の差</th><th>{rateLabel(settings.afterRate)}→100％の差</th></tr></thead>
+                <tbody>{printSupplierRows.map((supplier) => (
+                  <tr key={`print-${supplier.partner}`}>
+                    <td>{supplier.partner}</td>
+                    <td>{formatYen(supplier.grossAmount)}</td>
+                    <td>{formatYen(supplier.transitionImpact * displayFactor)}</td>
+                    <td>{formatYen(supplier.registeredBenefit * displayFactor)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </section>
+
+            <section className="print-notes">
+              <h2>前提・確認事項</h2>
+              <ul>
+                <li>課税区分52・62・72を対象に、取引金額と税率から100％の仕入税額相当額を算出しています。</li>
+                {isAnnualized && periodSpan ? <li>集計期間の結果を「期間の影響 × 365日 ÷ {periodSpan}日」で年換算しています。</li> : null}
+                {!assumptionsComplete ? <li>画面の「試算前の確認」に未確認項目があります。</li> : null}
+                {displayResult.assumedRateCount > 0 ? <li>税率を取得できない{displayResult.assumedRateCount.toLocaleString('ja-JP')}件は既定の{settings.defaultTaxRate}％で計算しています。</li> : null}
+                {resultStatus.missingDateExcludedCount > 0 ? <li>日付不明{resultStatus.missingDateExcludedCount.toLocaleString('ja-JP')}件を年換算の分子から除外しています。</li> : null}
+                {resultStatus.supplierLimitReason ? <li>1仕入先ごとの控除限度額を反映していません。実際の課税期間の税込支払総額を別途確認してください。</li> : null}
+              </ul>
+            </section>
+
+            <footer className="print-footer">
+              <p>本ツールは税額確定ではなく、一般課税における影響把握のための概算です。申告時は帳簿、適用要件、端数処理等を確認してください。</p>
+              <span>© 2026 税理士法人松本会計事務所 ｜ 制度基準日 {appMeta.lawBasisDate}</span>
+            </footer>
+          </article>
+        ) : null}
+      </section>
+
       <footer className="site-footer">
-        <div>
+        <div className="footer-primary">
           <span>© 2026</span>
-          <a href="https://www.matsumoto-kaikei.or.jp/" target="_blank" rel="license noopener noreferrer">税理士法人松本会計事務所</a>
+          <a href="https://www.matsumoto-kaikei.or.jp/" target="_blank" rel="noopener noreferrer">税理士法人松本会計事務所</a>
+          <span aria-hidden="true">｜</span>
           <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="license noopener noreferrer">CC BY-NC-SA 4.0</a>
+          <span aria-hidden="true">｜</span>
           <a href="https://takatrp.github.io/tool-portal/terms.html" target="_blank" rel="noopener noreferrer">利用条件</a>
-          <span>{appMeta.version} / 更新日 {appMeta.updatedAt}</span>
+          <span aria-hidden="true">｜</span>
+          <span>{appMeta.version}</span>
+          <span aria-hidden="true">｜</span>
+          <span>更新日 {appMeta.updatedAt}</span>
+        </div>
+        <div className="footer-references">
           <span>制度基準日 {appMeta.lawBasisDate}</span>
-          <strong>制度資料</strong>
+          <span aria-hidden="true">｜</span>
           <a href="https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/invoice-review/index.htm" target="_blank" rel="noopener noreferrer">国税庁・令和8年度税制改正特集</a>
+          <span aria-hidden="true">｜</span>
           <a href="https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/01-01.pdf" target="_blank" rel="noopener noreferrer">国税庁・インボイス制度Q&amp;A</a>
         </div>
         <p>本ツールは税額確定ではなく、一般課税における影響把握のための概算です。申告時は帳簿と適用要件を確認してください。</p>
