@@ -35,7 +35,6 @@ const allowedMethods = new Set<CalculationMethod>([
 
 export function registerInvoiceComparisonTool(
   setSettings: (updater: (current: AnalysisSettings) => AnalysisSettings) => void,
-  invalidateCalculationMethodConfirmation: () => void = () => undefined,
 ): () => void {
   const context = typeof document === 'undefined' ? undefined : document.modelContext;
   if (!context?.registerTool) return () => undefined;
@@ -90,7 +89,6 @@ export function registerInvoiceComparisonTool(
         calculationMethod: method as CalculationMethod,
         taxableSalesRatio: taxableSalesRatio ?? current.taxableSalesRatio,
       }));
-      invalidateCalculationMethodConfirmation();
       return {
         status: 'configured',
         beforeRate,

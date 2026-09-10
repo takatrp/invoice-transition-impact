@@ -11,7 +11,6 @@ export type ResultStatus = {
 export function getResultStatus(
   result: AnalysisResult,
   options: {
-    assumptionsComplete: boolean;
     isAnnualized: boolean;
     annualizationFactor?: number;
   },
@@ -40,7 +39,7 @@ export function getResultStatus(
       ? 'annualized'
       : null;
 
-  let label = '確認済みの試算';
+  let label = '影響額の概算';
   if (result.invalidTargetRowCount > 0) {
     label = '一部除外した参考集計';
   } else if (supplierLimitReason) {
@@ -49,8 +48,6 @@ export function getResultStatus(
     label = `日付不明${missingDateExcludedCount}件を除外した参考値`;
   } else if (result.assumedRateCount > 0) {
     label = '税率を仮定した参考値';
-  } else if (!options.assumptionsComplete) {
-    label = '未確認事項のある参考値';
   }
 
   return {
@@ -59,8 +56,7 @@ export function getResultStatus(
       result.invalidTargetRowCount > 0
       || supplierLimitReason !== null
       || missingDateExcludedCount > 0
-      || result.assumedRateCount > 0
-      || !options.assumptionsComplete,
+      || result.assumedRateCount > 0,
     assumedRateCount: result.assumedRateCount,
     missingDateExcludedCount,
     supplierLimitReason,

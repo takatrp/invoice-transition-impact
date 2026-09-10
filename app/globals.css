@@ -184,15 +184,11 @@
 
 .period-confirmation { display: grid; gap: 10px; padding: 13px; border: 1px solid #dce4e7; border-radius: 12px; background: #f8fafb; }
 .period-confirmation > small { color: var(--muted-foreground); font-size: .7rem; line-height: 1.5; }
+.period-confirmation > .period-note.is-warning { padding: 9px; border-radius: 9px; color: #744412; background: var(--amber-pale); font-weight: 700; }
 .period-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .period-inputs label { display: grid; gap: 5px; }
 .period-inputs label > span { color: #52636c; font-size: .7rem; font-weight: 800; }
 .period-inputs input { width: 100%; height: 40px; padding: 0 9px; border: 1px solid var(--input); border-radius: 8px; background: #fff; }
-.assumption-checklist { display: grid; gap: 9px; padding-top: 2px; }
-.assumption-check { display: flex; align-items: flex-start; gap: 9px; cursor: pointer; color: #344c58; font-size: .74rem; font-weight: 700; line-height: 1.5; }
-.assumption-check [data-slot='checkbox'] { margin-top: 1px; }
-.assumption-check.is-warning { padding: 9px; border-radius: 9px; color: #744412; background: var(--amber-pale); }
-
 .result-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 2px 2px 0; }
 .result-status { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; color: var(--teal); font-size: .78rem; font-weight: 900; }
 .result-status svg { width: 16px; }
@@ -215,9 +211,6 @@
 .impact-copy h3 { display: grid; gap: 8px; margin: 14px 0 8px; font-size: clamp(1rem, 2vw, 1.15rem); font-weight: 700; color: #cae0e5; }
 .impact-copy h3 strong { color: #fff; font-size: clamp(2.25rem, 6vw, 4.25rem); line-height: 1; letter-spacing: -.055em; font-variant-numeric: tabular-nums; }
 .impact-copy p { margin: 0; color: #aac2ca; font-size: .82rem; }
-.impact-orbit { position: absolute; right: clamp(28px, 5vw, 70px); top: 50%; width: 132px; height: 132px; display: grid; place-content: center; text-align: center; transform: translateY(-50%); border: 1px solid rgb(255 255 255 / 16%); border-radius: 50%; background: rgb(255 255 255 / 5%); }
-.impact-orbit span { color: #9bc5c8; font-size: .68rem; }
-.impact-orbit strong { max-width: 110px; overflow: hidden; text-overflow: ellipsis; font-size: .88rem; }
 
 .scenario-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .scenario-card { min-width: 0; padding: 17px; border: 1px solid #d9e2e6; border-radius: 14px; background: #fff; box-shadow: 0 6px 20px rgb(18 42 56 / 4%); }
@@ -303,7 +296,6 @@
   .period-chip { width: 100%; }
   .impact-hero { min-height: 220px; align-items: flex-start; padding: 26px 22px; }
   .impact-copy h3 strong { font-size: clamp(2rem, 11vw, 3rem); }
-  .impact-orbit { right: 18px; top: auto; bottom: 18px; width: 92px; height: 92px; transform: none; }
   .scenario-grid { grid-template-columns: 1fr; }
   .scenario-card { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; }
   .scenario-amount { margin-top: 0; text-align: right; }

@@ -176,7 +176,7 @@ void test('一部の金額が不正なら計算可能分と除外分を分ける
   assert.equal(result.invalidTargetEntries.length, 1);
 });
 
-void test('確認した集計期間外と日付不明の対象を年換算の分子から除外する', () => {
+void test('設定した集計期間外と日付不明の対象を年換算の分子から除外する', () => {
   const parsed = parseCsv([
     '日付,課税区分,税込金額,税率',
     '2026/04/01,52,110000,10%',
@@ -259,11 +259,11 @@ void test('貸方に税率列がなければ借方税率を流用せず既定税
   assert.equal(Math.round(result.transitionImpact), -1_000);
 });
 
-void test('税率を仮定した表示額は全確認済みでも参考値にする', () => {
+void test('税率を仮定した表示額は参考値にする', () => {
   const parsed = parseCsv('日付,課税区分,税込金額\n2026/4/1,52,110000');
   const csv: CsvData = { fileName: 'assumed.csv', encoding: 'UTF-8', headers: parsed[0], rows: parsed.slice(1) };
   const result = analyzeCsv(csv, inferMappings(csv.headers), settings);
-  assert.deepEqual(getResultStatus(result, { assumptionsComplete: true, isAnnualized: false }), {
+  assert.deepEqual(getResultStatus(result, { isAnnualized: false }), {
     label: '税率を仮定した参考値',
     isReference: true,
     assumedRateCount: 1,
@@ -278,7 +278,6 @@ void test('短期間の年換算で1仕入先の税込支払総額が1億円を�
   const result = analyzeCsv(csv, inferMappings(csv.headers), settings, { start: '2026-10-01', end: '2026-12-31' });
   const annualizationFactor = 365 / 92;
   const status = getResultStatus(result, {
-    assumptionsComplete: true,
     isAnnualized: true,
     annualizationFactor,
   });
@@ -290,7 +289,6 @@ void test('短期間の年換算で1仕入先の税込支払総額が1億円を�
   assert.equal(status.isReference, true);
   assert.equal(status.supplierLimitReason, 'annualized');
   assert.equal(getResultStatus(result, {
-    assumptionsComplete: true,
     isAnnualized: false,
     annualizationFactor,
   }).supplierLimitReason, null);
@@ -308,7 +306,6 @@ void test('年換算の1仕入先1億円判定は境界値と仕入先単位を�
   const statusFor = (rows: string[][]) => {
     const csv: CsvData = { fileName: 'boundary.csv', encoding: 'UTF-8', headers: rows[0], rows: rows.slice(1) };
     return getResultStatus(analyzeCsv(csv, inferMappings(csv.headers), settings), {
-      assumptionsComplete: true,
       isAnnualized: true,
       annualizationFactor: factor,
     });
@@ -331,7 +328,6 @@ void test('税抜・複数税率でも税込支払総額を使って年換算の
   const csv: CsvData = { fileName: 'annualized-net.csv', encoding: 'UTF-8', headers: parsed[0], rows: parsed.slice(1) };
   const result = analyzeCsv(csv, inferMappings(csv.headers), { ...settings, amountMode: 'excluded' });
   const status = getResultStatus(result, {
-    assumptionsComplete: true,
     isAnnualized: true,
     annualizationFactor: 5,
   });
@@ -344,7 +340,6 @@ void test('期間実績の1億円超は年換算倍率が1未満でも維持し�
   const actualOver = parseCsv('日付,課税区分,税込金額,税率,取引先\n2026/10/1,52,100000001,10%,A社');
   const actualCsv: CsvData = { fileName: 'actual-over.csv', encoding: 'UTF-8', headers: actualOver[0], rows: actualOver.slice(1) };
   const actualStatus = getResultStatus(analyzeCsv(actualCsv, inferMappings(actualCsv.headers), settings), {
-    assumptionsComplete: true,
     isAnnualized: true,
     annualizationFactor: 0.5,
   });
@@ -361,7 +356,6 @@ void test('期間実績の1億円超は年換算倍率が1未満でも維持し�
     end: '2026-10-31',
   });
   const outsideStatus = getResultStatus(periodResult, {
-    assumptionsComplete: true,
     isAnnualized: true,
     annualizationFactor: 365 / 31,
   });
@@ -369,7 +363,7 @@ void test('期間実績の1億円超は年換算倍率が1未満でも維持し�
   assert.equal(outsideStatus.supplierLimitReason, null);
 });
 
-void test('年換算で日付不明を除外した表示額は参考値、期間外除外だけなら確認済みにする', () => {
+void test('年換算で日付不明を除外した表示額は参考値、期間外除外だけなら概算にする', () => {
   const parsed = parseCsv([
     '日付,課税区分,税込金額,税率',
     '2026/4/1,52,110000,10%',
@@ -378,7 +372,7 @@ void test('年換算で日付不明を除外した表示額は参考値、期間
   ].join('\n'));
   const csv: CsvData = { fileName: 'status.csv', encoding: 'UTF-8', headers: parsed[0], rows: parsed.slice(1) };
   const result = analyzeCsv(csv, inferMappings(csv.headers), settings, { start: '2026-01-01', end: '2026-12-31' });
-  assert.equal(getResultStatus(result, { assumptionsComplete: true, isAnnualized: true }).label, '日付不明1件を除外した参考値');
+  assert.equal(getResultStatus(result, { isAnnualized: true }).label, '日付不明1件を除外した参考値');
 
   const outsideOnly = analyzeCsv(
     { ...csv, rows: [parsed[1], parsed[3]] },
@@ -386,5 +380,5 @@ void test('年換算で日付不明を除外した表示額は参考値、期間
     settings,
     { start: '2026-01-01', end: '2026-12-31' },
   );
-  assert.equal(getResultStatus(outsideOnly, { assumptionsComplete: true, isAnnualized: true }).label, '確認済みの試算');
+  assert.equal(getResultStatus(outsideOnly, { isAnnualized: true }).label, '影響額の概算');
 });
