@@ -1,6 +1,6 @@
 {
   "name": "invoice-transition-impact",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -11,7 +11,7 @@
     "build:pages": "vite build --config vite.pages.config.ts",
     "test": "node --experimental-strip-types --test src/test/*.test.ts",
     "start": "wrangler dev --config dist/server/wrangler.json",
-    "lint": "oxlint app src vite.pages.config.ts",
+    "lint": "tsc --noEmit --pretty false --incremental false",
     "format": "oxfmt"
   },
   "dependencies": {

@@ -67,6 +67,13 @@ export function normalizeHeader(value: string): string {
     .replace(/\s+/g, '');
 }
 
+export function isTkcJournalFormat(headers: string[]): boolean {
+  const normalizedHeaders = new Set(headers.map(normalizeHeader));
+  return tkcContextPack.journalFormatMarkers.every((aliases) =>
+    aliases.some((alias) => normalizedHeaders.has(normalizeHeader(alias))),
+  );
+}
+
 function findHeader(headers: string[], aliases: readonly string[]): number | null {
   const normalized = headers.map(normalizeHeader);
   const exact = normalized.findIndex((header) =>

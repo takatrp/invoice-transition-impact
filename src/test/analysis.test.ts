@@ -62,6 +62,28 @@ void test('年間換算用の期間は対象仕訳だけでなく元CSV全体の
   assert.equal(spanDays(result.sourceDateMin, result.sourceDateMax), 365);
 });
 
+void test('TKC仕訳帳の月日・課税区分・消費税等を自動読取して年換算期間を求める', () => {
+  const parsed = parseCsv([
+    '月日,借方課税区分,借方税率,借方取引金額,借方消費税等,貸方課税区分,貸方税率,貸方取引金額,貸方消費税等,取引先名,元帳摘要',
+    '2025/01/01,52,10,110000,10000,0,0,110000,0,A商店,対象仕入',
+    '2025/12/31,5,10,220000,20000,0,0,220000,0,B商店,期間確認用',
+  ].join('\n'));
+  const csv: CsvData = {
+    fileName: 'tkc-journal.csv',
+    encoding: 'UTF-8',
+    headers: parsed[0],
+    rows: parsed.slice(1),
+  };
+  const result = analyzeCsv(csv, inferMappings(csv.headers), settings);
+
+  assert.equal(result.targetEntries.length, 1);
+  assert.equal(result.taxEquivalent, 10_000);
+  assert.equal(result.transitionImpact, 1_000);
+  assert.equal(result.sourceDateMin, '2025-01-01');
+  assert.equal(result.sourceDateMax, '2025-12-31');
+  assert.equal(spanDays(result.sourceDateMin, result.sourceDateMax), 365);
+});
+
 void test('個別対応方式では52を全額、62を対象外、72を共通対応にする', () => {
   assert.equal(allocationFactor('52', 'individual', 0.6), 1);
   assert.equal(allocationFactor('62', 'individual', 0.6), 0);

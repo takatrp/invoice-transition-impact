@@ -37,8 +37,14 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { tkcContextPack } from '@/src/contextPacks/tkc';
+import { appMeta } from '@/src/config/app-meta';
 import { analyzeCsv, formatYen, spanDays } from '@/src/domain/analysis';
-import { inferMappings, parseCsv, readCsvFile } from '@/src/domain/csv';
+import {
+  inferMappings,
+  isTkcJournalFormat,
+  parseCsv,
+  readCsvFile,
+} from '@/src/domain/csv';
 import { rateLabel, transitionRateOptions } from '@/src/domain/rates';
 import { registerInvoiceComparisonTool } from '@/src/domain/webmcp';
 import type {
@@ -185,6 +191,16 @@ export function InvoiceImpactSimulator() {
   const mappingComplete = mappings.every(
     (mapping) => mapping.taxCodeIndex !== null && mapping.amountIndex !== null,
   );
+  const tkcJournalDetected = useMemo(() => isTkcJournalFormat(csv.headers), [csv.headers]);
+  const mappedTaxCodeValueCount = useMemo(
+    () => csv.rows.reduce(
+      (count, row) => count + mappings.filter(
+        (mapping) => mapping.taxCodeIndex !== null && String(row[mapping.taxCodeIndex] ?? '').trim() !== '',
+      ).length,
+      0,
+    ),
+    [csv.rows, mappings],
+  );
   const result = useMemo(
     () => (mappingComplete ? analyzeCsv(csv, mappings, settings) : null),
     [csv, mappingComplete, mappings, settings],
@@ -243,15 +259,21 @@ export function InvoiceImpactSimulator() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand-lockup">
+        <a
+          className="brand-lockup"
+          href="https://takatrp.github.io/tool-portal/"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="松本会計ツールポータルへ"
+        >
           <div className="brand-mark" aria-hidden="true">
-            <FileCheck2 />
+            <img src="./forstaff.png" alt="" />
           </div>
           <div>
-            <p>Invoice transition lab</p>
+            <p>松本会計ツール</p>
             <h1>インボイス経過措置 影響シミュレーター</h1>
           </div>
-        </div>
+        </a>
         <div className="privacy-pill">
           <LockKeyhole />
           CSVは端末内だけで処理
@@ -261,29 +283,29 @@ export function InvoiceImpactSimulator() {
       <section className="transition-strip" aria-label="経過措置の変更">
         <div>
           <span>現在</span>
-          <strong>80%</strong>
+          <strong>80％</strong>
           <small>～2026.09</small>
         </div>
         <ArrowRight aria-hidden="true" />
         <div className="active">
           <span>次の変更</span>
-          <strong>70%</strong>
+          <strong>70％</strong>
           <small>2026.10～</small>
         </div>
         <ArrowRight aria-hidden="true" />
         <div>
           <span>その後</span>
-          <strong>50% → 30% → 0%</strong>
+          <strong>50％ → 30％ → 0％</strong>
           <small>段階的に縮小</small>
         </div>
-        <p>令和8年度税制改正を反映</p>
+        <p>{appMeta.calculationRuleLabel}</p>
       </section>
 
       <div className="workspace-grid">
         <aside className="control-column">
           <Card className="upload-card">
             <CardHeader>
-              <div className="section-kicker">STEP 1</div>
+              <div className="section-kicker">手順 1</div>
               <CardTitle className="text-lg">1年分の仕訳CSVを入れる</CardTitle>
               <CardDescription>
                 課税区分52・62・72の仕訳だけを抽出します。
@@ -338,7 +360,13 @@ export function InvoiceImpactSimulator() {
                     </small>
                   </span>
                 </div>
-                {isSample ? <Badge className="sample-badge">サンプル表示</Badge> : <Badge variant="secondary">読込済み</Badge>}
+                {isSample ? (
+                  <Badge className="sample-badge">サンプル表示</Badge>
+                ) : tkcJournalDetected ? (
+                  <Badge className="detected-badge">TKC仕訳帳・自動設定</Badge>
+                ) : (
+                  <Badge variant="secondary">列を自動設定</Badge>
+                )}
               </div>
 
               <details className="mapping-panel">
@@ -371,24 +399,24 @@ export function InvoiceImpactSimulator() {
 
           <Card className="settings-card">
             <CardHeader>
-              <div className="section-kicker">STEP 2</div>
+              <div className="section-kicker">手順 2</div>
               <CardTitle className="text-lg">試算の前提</CardTitle>
               <CardDescription>まずは変更前後の割合だけで比較できます。</CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="rate-grid">
                 <div className="select-field">
-                  <span>Before</span>
+                  <span>変更前</span>
                   <Select value={String(settings.beforeRate)} onValueChange={(value) => setSettings((current) => ({ ...current, beforeRate: Number(value) as RatePreset }))}>
-                    <SelectTrigger className="h-11 w-full bg-white" aria-label="Beforeの控除割合"><SelectValue>{fullRateLabel(settings.beforeRate)}</SelectValue></SelectTrigger>
+                    <SelectTrigger className="h-11 w-full bg-white" aria-label="変更前の控除割合"><SelectValue>{fullRateLabel(settings.beforeRate)}</SelectValue></SelectTrigger>
                     <SelectContent>{transitionRateOptions.map((option) => <SelectItem key={option.value} value={String(option.value)}>{option.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div className="rate-arrow"><ArrowDown /></div>
                 <div className="select-field">
-                  <span>After</span>
+                  <span>変更後</span>
                   <Select value={String(settings.afterRate)} onValueChange={(value) => setSettings((current) => ({ ...current, afterRate: Number(value) as RatePreset }))}>
-                    <SelectTrigger className="h-11 w-full bg-white" aria-label="Afterの控除割合"><SelectValue>{fullRateLabel(settings.afterRate)}</SelectValue></SelectTrigger>
+                    <SelectTrigger className="h-11 w-full bg-white" aria-label="変更後の控除割合"><SelectValue>{fullRateLabel(settings.afterRate)}</SelectValue></SelectTrigger>
                     <SelectContent>{transitionRateOptions.map((option) => <SelectItem key={option.value} value={String(option.value)}>{option.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
@@ -457,7 +485,21 @@ export function InvoiceImpactSimulator() {
           {!mappingComplete ? (
             <div className="empty-result"><AlertTriangle /><h2>読み取る列を指定してください</h2><p>左の「読み取る列を確認」から、課税区分列と金額列を選びます。</p></div>
           ) : result && result.targetEntries.length === 0 ? (
-            <div className="empty-result"><FileSpreadsheet /><h2>課税区分52・62・72は見つかりませんでした</h2><p>読み取る列が正しいか、CSVの値が課税区分コードになっているか確認してください。</p></div>
+            <div className="empty-result">
+              <FileSpreadsheet />
+              {tkcJournalDetected ? <div className="format-detected"><CheckCircle2 />TKC仕訳帳形式を自動認識</div> : null}
+              <h2>課税区分52・62・72は0件です</h2>
+              <p>{result.sourceRowCount.toLocaleString('ja-JP')}行、{formatDate(result.sourceDateMin)}〜{formatDate(result.sourceDateMax)}を読み取りました。</p>
+              {mappedTaxCodeValueCount === 0 ? (
+                <Alert className="empty-warning">
+                  <AlertTriangle />
+                  <AlertTitle>課税区分の値が入っていません</AlertTitle>
+                  <AlertDescription>借方課税区分と貸方課税区分が全行空欄です。課税区分を含めて出力したCSVを読み込んでください。</AlertDescription>
+                </Alert>
+              ) : (
+                <p>借方・貸方の課税区分を自動で確認しましたが、対象コードはありませんでした。</p>
+              )}
+            </div>
           ) : result ? (
             <>
               <div className="result-heading">
@@ -483,8 +525,8 @@ export function InvoiceImpactSimulator() {
               </div>
 
               <div className="scenario-grid">
-                <ScenarioCard eyebrow="BEFORE" rate={rateLabel(settings.beforeRate)} amount={result.beforeCredit * displayFactor} tone="before" max={maxScenario * displayFactor} />
-                <ScenarioCard eyebrow="AFTER" rate={rateLabel(settings.afterRate)} amount={result.afterCredit * displayFactor} tone="after" max={maxScenario * displayFactor} />
+                <ScenarioCard eyebrow="変更前" rate={rateLabel(settings.beforeRate)} amount={result.beforeCredit * displayFactor} tone="before" max={maxScenario * displayFactor} />
+                <ScenarioCard eyebrow="変更後" rate={rateLabel(settings.afterRate)} amount={result.afterCredit * displayFactor} tone="after" max={maxScenario * displayFactor} />
                 <ScenarioCard eyebrow="登録事業者なら" rate="100%" amount={result.registeredCredit * displayFactor} tone="registered" max={maxScenario * displayFactor} />
               </div>
 
@@ -493,7 +535,7 @@ export function InvoiceImpactSimulator() {
                 <div>
                   <span>同じ税込価格で、適格請求書を保存できる前提</span>
                   <h3>登録事業者との取引なら、最大 {formatYen(result.registeredBenefit * displayFactor)} の差</h3>
-                  <p>{isAnnualized ? '年間換算で、' : 'CSV期間内で、'}After時点の未登録仕入先と比べて納付増を避けられる可能性があります。</p>
+                  <p>{isAnnualized ? '年間換算で、' : 'CSV期間内で、'}変更後時点の未登録仕入先と比べて納付増を避けられる可能性があります。</p>
                 </div>
               </div>
 
@@ -551,7 +593,17 @@ export function InvoiceImpactSimulator() {
       </div>
 
       <footer className="site-footer">
-        <div><strong>制度資料</strong><a href="https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/invoice-review/index.htm" target="_blank" rel="noreferrer">国税庁・令和8年度税制改正特集</a><a href="https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/01-01.pdf" target="_blank" rel="noreferrer">国税庁・インボイス制度Q&amp;A</a></div>
+        <div>
+          <span>© 2026</span>
+          <a href="https://www.matsumoto-kaikei.or.jp/" target="_blank" rel="license noopener noreferrer">税理士法人松本会計事務所</a>
+          <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="license noopener noreferrer">CC BY-NC-SA 4.0</a>
+          <a href="https://takatrp.github.io/tool-portal/terms.html" target="_blank" rel="noopener noreferrer">利用条件</a>
+          <span>{appMeta.version} / 更新日 {appMeta.updatedAt}</span>
+          <span>制度基準日 {appMeta.lawBasisDate}</span>
+          <strong>制度資料</strong>
+          <a href="https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/invoice-review/index.htm" target="_blank" rel="noopener noreferrer">国税庁・令和8年度税制改正特集</a>
+          <a href="https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/01-01.pdf" target="_blank" rel="noopener noreferrer">国税庁・インボイス制度Q&amp;A</a>
+        </div>
         <p>本ツールは税額確定ではなく、一般課税における影響把握のための概算です。申告時は帳簿と適用要件を確認してください。</p>
       </footer>
     </main>
