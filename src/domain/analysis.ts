@@ -94,6 +94,7 @@ function valueAt(row: string[], index: number | null): string {
 function buildEntry(
   row: string[],
   rowIndex: number,
+  sourceRow: number,
   mapping: EntryMapping,
   settings: AnalysisSettings,
 ):
@@ -113,7 +114,8 @@ function buildEntry(
     return {
       kind: 'invalid',
       issue: {
-        sourceRow: rowIndex + 2,
+        sourceRow,
+        sourceRecord: rowIndex + 1,
         taxCode,
         rawAmount: rawAmountValue,
         rawDate,
@@ -133,13 +135,18 @@ function buildEntry(
     ? Math.abs(rawTaxAmount) * Math.sign(amount || mapping.sign)
     : null;
   const taxEquivalent = taxFromAmount(amount, taxRate, settings.amountMode);
+  const grossPaymentAmount = settings.amountMode === 'included'
+    ? amount
+    : amount * (1 + taxRate / 100);
 
   return {
     kind: 'valid',
     entry: {
-      sourceRow: rowIndex + 2,
+      sourceRow,
+      sourceRecord: rowIndex + 1,
       taxCode,
       amount,
+      grossPaymentAmount,
       taxRate,
       taxEquivalent,
       date: normalizeDate(rawDate),
@@ -158,6 +165,7 @@ function emptySupplier(partner: string): SupplierSummary {
     partner,
     transactionCount: 0,
     grossAmount: 0,
+    grossPaymentAmount: 0,
     taxEquivalent: 0,
     allocatedTax: 0,
     beforeCredit: 0,
@@ -186,7 +194,8 @@ export function analyzeCsv(
 
   csv.rows.forEach((row, rowIndex) => {
     mappings.forEach((mapping) => {
-      const built = buildEntry(row, rowIndex, mapping, settings);
+      const sourceRow = csv.rowStartLines?.[rowIndex] ?? rowIndex + 2;
+      const built = buildEntry(row, rowIndex, sourceRow, mapping, settings);
       if (built.kind === 'invalid') {
         detectedTargetCount += 1;
         invalidTargetEntries.push(built.issue);
@@ -197,6 +206,7 @@ export function analyzeCsv(
         if (period && !built.entry.date) {
           periodExcludedEntries.push({
             sourceRow: built.entry.sourceRow,
+            sourceRecord: built.entry.sourceRecord,
             taxCode: built.entry.taxCode,
             date: null,
             mappingLabel: built.entry.mappingLabel,
@@ -205,6 +215,7 @@ export function analyzeCsv(
         } else if (period && !isWithinPeriod(built.entry.date as string, period)) {
           periodExcludedEntries.push({
             sourceRow: built.entry.sourceRow,
+            sourceRecord: built.entry.sourceRecord,
             taxCode: built.entry.taxCode,
             date: built.entry.date,
             mappingLabel: built.entry.mappingLabel,
@@ -220,6 +231,7 @@ export function analyzeCsv(
   const bySupplierMap = new Map<string, SupplierSummary>();
   const byCodeMap = new Map<string, SupplierSummary>();
   let grossAmount = 0;
+  let grossPaymentAmount = 0;
   let taxEquivalent = 0;
   let allocatedTax = 0;
   let beforeCredit = 0;
@@ -237,6 +249,7 @@ export function analyzeCsv(
     const after = allocated * settings.afterRate;
     const registered = allocated;
     grossAmount += entry.amount;
+    grossPaymentAmount += entry.grossPaymentAmount;
     taxEquivalent += entry.taxEquivalent;
     allocatedTax += allocated;
     beforeCredit += before;
@@ -246,6 +259,7 @@ export function analyzeCsv(
     const supplier = bySupplierMap.get(entry.partner) ?? emptySupplier(entry.partner);
     supplier.transactionCount += 1;
     supplier.grossAmount += entry.amount;
+    supplier.grossPaymentAmount += entry.grossPaymentAmount;
     supplier.taxEquivalent += entry.taxEquivalent;
     supplier.allocatedTax += allocated;
     supplier.beforeCredit += before;
@@ -258,6 +272,7 @@ export function analyzeCsv(
     const code = byCodeMap.get(entry.taxCode) ?? emptySupplier(entry.taxCode);
     code.transactionCount += 1;
     code.grossAmount += entry.amount;
+    code.grossPaymentAmount += entry.grossPaymentAmount;
     code.taxEquivalent += entry.taxEquivalent;
     code.allocatedTax += allocated;
     code.beforeCredit += before;
@@ -296,6 +311,7 @@ export function analyzeCsv(
     assumedRateCount: targetEntries.filter((entry) => entry.rateAssumed).length,
     csvTaxAmountCount: targetEntries.filter((entry) => entry.csvTaxAmount !== null).length,
     grossAmount,
+    grossPaymentAmount,
     taxEquivalent,
     allocatedTax,
     beforeCredit,
@@ -316,7 +332,7 @@ export function analyzeCsv(
     ).length,
     analysisPeriod: period,
     hasOneHundredMillionSupplier: bySupplier.some(
-      (supplier) => supplier.partner !== '仕入先未取得' && supplier.grossAmount > 100_000_000,
+      (supplier) => supplier.partner !== '仕入先未取得' && supplier.grossPaymentAmount > 100_000_000,
     ),
   };
 }

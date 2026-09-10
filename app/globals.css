@@ -174,6 +174,7 @@
 .ratio-field input { width: 90px; height: 38px; padding: 0 9px; text-align: right; border: 1px solid #d8c49f; border-radius: 8px; background: #fff; }
 .inline-settings { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .inline-settings .select-field { display: grid; gap: 5px; }
+.tax-excluded-note { display: block; padding: 9px; border-radius: 8px; color: #744412; background: var(--amber-pale); font-size: .68rem; line-height: 1.55; }
 
 .period-confirmation { display: grid; gap: 10px; padding: 13px; border: 1px solid #dce4e7; border-radius: 12px; background: #f8fafb; }
 .period-confirmation > small { color: var(--muted-foreground); font-size: .7rem; line-height: 1.5; }
@@ -203,6 +204,8 @@
 .impact-hero::before { content: ''; position: absolute; width: 280px; height: 280px; right: -90px; top: -150px; border: 1px solid rgb(255 255 255 / 10%); border-radius: 50%; box-shadow: 0 0 0 46px rgb(255 255 255 / 3%), 0 0 0 90px rgb(255 255 255 / 2%); }
 .impact-copy { position: relative; z-index: 1; }
 .impact-copy > span { display: inline-flex; padding: 5px 9px; border-radius: 999px; color: #aee1dd; background: rgb(105 209 201 / 12%); font-size: .76rem; font-weight: 900; letter-spacing: .04em; }
+.result-quality-note { width: fit-content; margin-top: 10px; padding: 5px 9px; border: 1px solid rgb(174 225 221 / 35%); border-radius: 8px; color: #d9f2f0; font-size: .76rem; font-weight: 900; }
+.result-quality-note.is-warning { border-color: rgb(255 207 129 / 45%); color: #ffda9c; background: rgb(121 71 8 / 24%); }
 .impact-copy h3 { display: grid; gap: 8px; margin: 14px 0 8px; font-size: clamp(1rem, 2vw, 1.15rem); font-weight: 700; color: #cae0e5; }
 .impact-copy h3 strong { color: #fff; font-size: clamp(2.25rem, 6vw, 4.25rem); line-height: 1; letter-spacing: -.055em; font-variant-numeric: tabular-nums; }
 .impact-copy p { margin: 0; color: #aac2ca; font-size: .82rem; }

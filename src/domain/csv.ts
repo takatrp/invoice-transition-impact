@@ -18,12 +18,27 @@ export function detectCsvEncoding(bytes: Uint8Array): CsvEncoding {
   }
 }
 
-export function parseCsv(text: string): string[][] {
+export type ParsedCsv = {
+  rows: string[][];
+  startLines: number[];
+};
+
+export function parseCsvWithMeta(text: string): ParsedCsv {
   const clean = text.replace(/^\uFEFF/, '');
   const rows: string[][] = [];
+  const startLines: number[] = [];
   let row: string[] = [];
   let field = '';
   let quoted = false;
+  let physicalLine = 1;
+  let recordStartLine = 1;
+
+  function pushRecord(): void {
+    if (row.some((cell) => cell.trim() !== '')) {
+      rows.push(row);
+      startLines.push(recordStartLine);
+    }
+  }
 
   for (let index = 0; index < clean.length; index += 1) {
     const char = clean[index];
@@ -35,6 +50,7 @@ export function parseCsv(text: string): string[][] {
         quoted = false;
       } else {
         field += char;
+        if (char === '\n') physicalLine += 1;
       }
     } else if (char === '"') {
       quoted = true;
@@ -43,32 +59,39 @@ export function parseCsv(text: string): string[][] {
       field = '';
     } else if (char === '\n') {
       row.push(field.replace(/\r$/, ''));
-      rows.push(row);
+      pushRecord();
       row = [];
       field = '';
+      physicalLine += 1;
+      recordStartLine = physicalLine;
     } else {
       field += char;
     }
   }
 
   if (quoted) {
-    throw new Error('CSVの引用符が閉じられていません。元CSVを確認してください。');
+    throw new Error(`CSVの${recordStartLine}行目から始まるレコードの引用符が閉じられていません。元CSVを確認してください。`);
   }
 
   if (field !== '' || row.length > 0) {
     row.push(field.replace(/\r$/, ''));
-    rows.push(row);
+    pushRecord();
   }
 
-  return rows.filter((cells) => cells.some((cell) => cell.trim() !== ''));
+  return { rows, startLines };
 }
 
-export function validateCsvRows(rows: string[][]): void {
+export function parseCsv(text: string): string[][] {
+  return parseCsvWithMeta(text).rows;
+}
+
+export function validateCsvRows(rows: string[][], startLines?: number[]): void {
   if (rows.length === 0) return;
   const expected = rows[0].length;
   const invalid = rows.slice(1).findIndex((row) => row.length !== expected);
   if (invalid >= 0) {
-    throw new Error(`CSVの${invalid + 2}行目は列数が見出し行と一致しません。元CSVを確認してください。`);
+    const physicalLine = startLines?.[invalid + 1] ?? invalid + 2;
+    throw new Error(`CSVの${physicalLine}行目から始まるレコードは列数が見出し行と一致しません。元CSVを確認してください。`);
   }
 }
 
@@ -99,6 +122,12 @@ function findHeader(headers: string[], aliases: readonly string[]): number | nul
   return partial >= 0 ? partial : null;
 }
 
+function findExactHeader(headers: string[], aliases: readonly string[]): number | null {
+  const normalizedAliases = new Set(aliases.map(normalizeHeader));
+  const exact = headers.map(normalizeHeader).findIndex((header) => normalizedAliases.has(header));
+  return exact >= 0 ? exact : null;
+}
+
 function genericIndex(
   headers: string[],
   key: keyof typeof tkcContextPack.headerAliases,
@@ -109,9 +138,14 @@ function genericIndex(
 export function inferMappings(headers: string[]): EntryMapping[] {
   const dateIndex = genericIndex(headers, 'date');
   const descriptionIndex = genericIndex(headers, 'description');
-  const sharedPartnerIndex = genericIndex(headers, 'partner');
-  const sharedRateIndex = genericIndex(headers, 'taxRate');
-  const sharedTaxAmountIndex = genericIndex(headers, 'taxAmount');
+  const genericPartnerIndex = genericIndex(headers, 'partner');
+  const genericRateIndex = genericIndex(headers, 'taxRate');
+  const genericTaxAmountIndex = genericIndex(headers, 'taxAmount');
+  // In split debit/credit journals, only an exact generic header is shared.
+  // A partial match such as 借方税率 must never be reused on the credit side.
+  const sharedPartnerIndex = findExactHeader(headers, tkcContextPack.headerAliases.partner);
+  const sharedRateIndex = findExactHeader(headers, tkcContextPack.headerAliases.taxRate);
+  const sharedTaxAmountIndex = findExactHeader(headers, tkcContextPack.headerAliases.taxAmount);
   const split = tkcContextPack.splitHeaders;
 
   const debitTaxCode = findHeader(headers, split.debitTaxCode);
@@ -130,7 +164,7 @@ export function inferMappings(headers: string[]): EntryMapping[] {
       taxAmountIndex:
         findHeader(headers, split.debitTaxAmount) ?? sharedTaxAmountIndex,
       partnerIndex:
-        sharedPartnerIndex ?? findHeader(headers, split.creditPartner) ?? findHeader(headers, split.debitPartner),
+        sharedPartnerIndex ?? findHeader(headers, split.debitPartner) ?? findHeader(headers, split.creditPartner),
       descriptionIndex,
       sign: 1,
     });
@@ -145,7 +179,7 @@ export function inferMappings(headers: string[]): EntryMapping[] {
       taxAmountIndex:
         findHeader(headers, split.creditTaxAmount) ?? sharedTaxAmountIndex,
       partnerIndex:
-        sharedPartnerIndex ?? findHeader(headers, split.debitPartner) ?? findHeader(headers, split.creditPartner),
+        sharedPartnerIndex ?? findHeader(headers, split.creditPartner) ?? findHeader(headers, split.debitPartner),
       descriptionIndex,
       sign: -1,
     });
@@ -158,9 +192,9 @@ export function inferMappings(headers: string[]): EntryMapping[] {
       taxCodeIndex: genericIndex(headers, 'taxCode'),
       amountIndex: genericIndex(headers, 'amount'),
       dateIndex,
-      taxRateIndex: sharedRateIndex,
-      taxAmountIndex: sharedTaxAmountIndex,
-      partnerIndex: sharedPartnerIndex,
+      taxRateIndex: genericRateIndex,
+      taxAmountIndex: genericTaxAmountIndex,
+      partnerIndex: genericPartnerIndex,
       descriptionIndex,
       sign: 1,
     },
@@ -171,16 +205,17 @@ export async function readCsvFile(file: File): Promise<CsvData> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const encoding = detectCsvEncoding(bytes);
   const decoder = new TextDecoder(encoding === 'UTF-8' ? 'utf-8' : 'shift-jis');
-  const parsed = parseCsv(decoder.decode(bytes));
-  if (parsed.length < 2) {
+  const parsed = parseCsvWithMeta(decoder.decode(bytes));
+  if (parsed.rows.length < 2) {
     throw new Error('見出し行と1件以上の仕訳データがあるCSVを選んでください。');
   }
-  validateCsvRows(parsed);
+  validateCsvRows(parsed.rows, parsed.startLines);
 
   return {
     fileName: file.name,
     encoding,
-    headers: parsed[0].map((header) => header.replace(/^\uFEFF/, '').trim()),
-    rows: parsed.slice(1),
+    headers: parsed.rows[0].map((header) => header.replace(/^\uFEFF/, '').trim()),
+    rows: parsed.rows.slice(1),
+    rowStartLines: parsed.startLines.slice(1),
   };
 }

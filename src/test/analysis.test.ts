@@ -10,8 +10,9 @@ import {
   spanDays,
   taxFromAmount,
 } from '../domain/analysis.ts';
-import { inferMappings, parseCsv } from '../domain/csv.ts';
+import { inferMappings, parseCsv, parseCsvWithMeta } from '../domain/csv.ts';
 import { classifyImpact, getTransitionStage } from '../domain/rates.ts';
+import { getResultStatus } from '../domain/result-status.ts';
 import type { AnalysisSettings, CsvData } from '../domain/types.ts';
 
 const settings: AnalysisSettings = {
@@ -131,7 +132,39 @@ void test('対象コード全件の金額が不正でも対象なしにせず元
   assert.equal(result.targetEntries.length, 0);
   assert.equal(result.invalidTargetEntries.length, 1);
   assert.equal(result.invalidTargetEntries[0].sourceRow, 2);
+  assert.equal(result.invalidTargetEntries[0].sourceRecord, 1);
   assert.equal(result.invalidTargetEntries[0].reason, 'amount_missing');
+});
+
+void test('開始物理行とデータ行を正常・不正・期間除外の各明細へ引き継ぐ', () => {
+  const parsed = parseCsvWithMeta([
+    '日付,課税区分,税込金額,税率,摘要',
+    '2026/4/1,52,110000,10%,"一行目\n続き"',
+    '',
+    ',72,不明,10%,二件目',
+    '2025/12/31,52,110000,10%,三件目',
+  ].join('\n'));
+  const csv: CsvData = {
+    fileName: 'location.csv',
+    encoding: 'UTF-8',
+    headers: parsed.rows[0],
+    rows: parsed.rows.slice(1),
+    rowStartLines: parsed.startLines.slice(1),
+  };
+  const result = analyzeCsv(csv, inferMappings(csv.headers), settings, { start: '2026-01-01', end: '2026-12-31' });
+  assert.deepEqual(csv.rowStartLines, [2, 5, 6]);
+  assert.deepEqual(
+    result.targetEntries.map((entry) => [entry.sourceRow, entry.sourceRecord]),
+    [[2, 1]],
+  );
+  assert.deepEqual(
+    result.invalidTargetEntries.map((entry) => [entry.sourceRow, entry.sourceRecord]),
+    [[5, 2]],
+  );
+  assert.deepEqual(
+    result.periodExcludedEntries.map((entry) => [entry.sourceRow, entry.sourceRecord, entry.reason]),
+    [[6, 3, 'outside_period']],
+  );
 });
 
 void test('一部の金額が不正なら計算可能分と除外分を分ける', () => {
@@ -197,4 +230,63 @@ void test('1仕入先の税込対象仕入が1億円を超えた場合だけ上�
   const mappings = inferMappings(atLimit[0]);
   assert.equal(analyzeCsv({ fileName: 'at.csv', encoding: 'UTF-8', headers: atLimit[0], rows: atLimit.slice(1) }, mappings, settings).hasOneHundredMillionSupplier, false);
   assert.equal(analyzeCsv({ fileName: 'over.csv', encoding: 'UTF-8', headers: overLimit[0], rows: overLimit.slice(1) }, mappings, settings).hasOneHundredMillionSupplier, true);
+});
+
+void test('税抜入力は明細ごとに税込支払総額へ直して1億円超を判定する', () => {
+  const parsed = parseCsv([
+    '日付,課税区分,税抜金額,税率,取引先',
+    '2026/4/1,52,50000000,10%,A社',
+    '2026/4/2,52,45000000,8%,A社',
+  ].join('\n'));
+  const csv: CsvData = { fileName: 'net.csv', encoding: 'UTF-8', headers: parsed[0], rows: parsed.slice(1) };
+  const result = analyzeCsv(csv, inferMappings(csv.headers), { ...settings, amountMode: 'excluded' });
+  assert.equal(result.grossAmount, 95_000_000);
+  assert.equal(result.grossPaymentAmount, 103_600_000);
+  assert.equal(result.bySupplier[0].grossPaymentAmount, 103_600_000);
+  assert.equal(result.hasOneHundredMillionSupplier, true);
+});
+
+void test('貸方に税率列がなければ借方税率を流用せず既定税率の参考値にする', () => {
+  const parsed = parseCsv([
+    '借方課税区分,借方取引金額,借方税率,貸方課税区分,貸方取引金額,取引先名',
+    '0,110000,8%,52,110000,A社',
+  ].join('\n'));
+  const csv: CsvData = { fileName: 'side-rate.csv', encoding: 'UTF-8', headers: parsed[0], rows: parsed.slice(1) };
+  const result = analyzeCsv(csv, inferMappings(csv.headers), settings);
+  assert.equal(result.targetEntries[0].taxRate, 10);
+  assert.equal(result.targetEntries[0].rateAssumed, true);
+  assert.equal(result.assumedRateCount, 1);
+  assert.equal(Math.round(result.transitionImpact), -1_000);
+});
+
+void test('税率を仮定した表示額は全確認済みでも参考値にする', () => {
+  const parsed = parseCsv('日付,課税区分,税込金額\n2026/4/1,52,110000');
+  const csv: CsvData = { fileName: 'assumed.csv', encoding: 'UTF-8', headers: parsed[0], rows: parsed.slice(1) };
+  const result = analyzeCsv(csv, inferMappings(csv.headers), settings);
+  assert.deepEqual(getResultStatus(result, { assumptionsComplete: true, isAnnualized: false }), {
+    label: '税率を仮定した参考値',
+    isReference: true,
+    assumedRateCount: 1,
+    missingDateExcludedCount: 0,
+  });
+});
+
+void test('年換算で日付不明を除外した表示額は参考値、期間外除外だけなら確認済みにする', () => {
+  const parsed = parseCsv([
+    '日付,課税区分,税込金額,税率',
+    '2026/4/1,52,110000,10%',
+    ',52,110000,10%',
+    '2025/12/31,52,110000,10%',
+  ].join('\n'));
+  const csv: CsvData = { fileName: 'status.csv', encoding: 'UTF-8', headers: parsed[0], rows: parsed.slice(1) };
+  const result = analyzeCsv(csv, inferMappings(csv.headers), settings, { start: '2026-01-01', end: '2026-12-31' });
+  assert.equal(getResultStatus(result, { assumptionsComplete: true, isAnnualized: true }).label, '日付不明1件を除外した参考値');
+
+  const outsideOnly = analyzeCsv(
+    { ...csv, rows: [parsed[1], parsed[3]] },
+    inferMappings(csv.headers),
+    settings,
+    { start: '2026-01-01', end: '2026-12-31' },
+  );
+  assert.equal(getResultStatus(outsideOnly, { assumptionsComplete: true, isAnnualized: true }).label, '確認済みの試算');
 });

@@ -15,6 +15,8 @@ export type CsvData = {
   encoding: CsvEncoding;
   headers: string[];
   rows: string[][];
+  /** Each data record's one-based starting physical line in the source CSV. */
+  rowStartLines?: number[];
 };
 
 export type EntryMapping = {
@@ -33,6 +35,7 @@ export type InvalidTargetReason = 'amount_missing' | 'amount_invalid';
 
 export type InvalidTargetEntry = {
   sourceRow: number;
+  sourceRecord: number;
   taxCode: string;
   rawAmount: string;
   rawDate: string;
@@ -45,6 +48,7 @@ export type InvalidTargetEntry = {
 
 export type PeriodExcludedEntry = {
   sourceRow: number;
+  sourceRecord: number;
   taxCode: string;
   date: string | null;
   mappingLabel: string;
@@ -58,8 +62,10 @@ export type AnalysisPeriod = {
 
 export type NormalizedEntry = {
   sourceRow: number;
+  sourceRecord: number;
   taxCode: string;
   amount: number;
+  grossPaymentAmount: number;
   taxRate: 8 | 10;
   taxEquivalent: number;
   date: string | null;
@@ -84,6 +90,7 @@ export type SupplierSummary = {
   partner: string;
   transactionCount: number;
   grossAmount: number;
+  grossPaymentAmount: number;
   taxEquivalent: number;
   allocatedTax: number;
   beforeCredit: number;
@@ -108,6 +115,7 @@ export type AnalysisResult = {
   assumedRateCount: number;
   csvTaxAmountCount: number;
   grossAmount: number;
+  grossPaymentAmount: number;
   taxEquivalent: number;
   allocatedTax: number;
   beforeCredit: number;

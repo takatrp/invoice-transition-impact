@@ -6,6 +6,7 @@ import {
   inferMappings,
   isTkcJournalFormat,
   parseCsv,
+  parseCsvWithMeta,
   validateCsvRows,
 } from '../domain/csv.ts';
 
@@ -22,11 +23,40 @@ void test('UTF-8 BOMを認識する', () => {
 });
 
 void test('閉じていない引用符をエラーにする', () => {
-  assert.throws(() => parseCsv('課税区分,摘要\n52,"未完了'), /引用符が閉じられていません/);
+  assert.throws(() => parseCsv('課税区分,摘要\n52,"未完了'), /2行目から始まるレコードの引用符が閉じられていません/);
+});
+
+void test('セル内改行と空行があってもレコードの開始物理行を保持する', () => {
+  const parsed = parseCsvWithMeta('課税区分,摘要,金額\r\n52,"会議\n軽食",11000\r\n\r\n72,交通費,22000\r\n');
+  assert.deepEqual(parsed.startLines, [1, 2, 5]);
+  assert.equal(parsed.rows[2][0], '72');
 });
 
 void test('見出しと列数が違う行をエラーにする', () => {
   assert.throws(() => validateCsvRows([['a', 'b'], ['1']]), /2行目/);
+  assert.throws(() => validateCsvRows([['a', 'b'], ['1']], [1, 5]), /5行目から始まるレコード/);
+});
+
+void test('借方専用の税率・税額・取引先を貸方の共通列として流用しない', () => {
+  const headers = [
+    '借方課税区分',
+    '借方取引金額',
+    '借方税率',
+    '借方消費税等',
+    '借方取引先名',
+    '貸方課税区分',
+    '貸方取引金額',
+  ];
+  const mappings = inferMappings(headers);
+  assert.equal(mappings[1].taxRateIndex, null);
+  assert.equal(mappings[1].taxAmountIndex, null);
+  assert.equal(mappings[1].partnerIndex, 4);
+});
+
+void test('完全一致の共通税率列は借方と貸方の双方で使う', () => {
+  const headers = ['借方課税区分', '借方取引金額', '貸方課税区分', '貸方取引金額', '税率'];
+  const mappings = inferMappings(headers);
+  assert.deepEqual(mappings.map((mapping) => mapping.taxRateIndex), [4, 4]);
 });
 
 void test('一般的な単一列形式を自動対応する', () => {
