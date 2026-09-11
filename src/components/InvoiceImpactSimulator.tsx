@@ -960,6 +960,7 @@ export function InvoiceImpactSimulator() {
           <a href="https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/01-01.pdf" target="_blank" rel="noopener noreferrer">国税庁・インボイス制度Q&amp;A</a>
         </div>
         <p>本ツールは税額確定ではなく、一般課税における影響把握のための概算です。申告時は帳簿と適用要件を確認してください。</p>
+        <p>アクセス状況の把握にGoogle Analyticsを使用しています。CSVの内容・ファイル名・取引先名・試算金額は送信しません。</p>
       </footer>
     </main>
   );
