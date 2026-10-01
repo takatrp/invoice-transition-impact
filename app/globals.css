@@ -111,6 +111,21 @@
 .print-button svg { width: 16px; height: 16px; }
 .header-version { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 0 9px; border: 1px solid #c7d8df; border-radius: 999px; color: #315f6f; background: #eef6f8; font-size: .7rem; font-weight: 900; white-space: nowrap; }
 
+.audit-checklist-notice { width: min(var(--content-max-width), 100%); margin: 0 auto; padding: 4px var(--content-gutter) 16px; }
+.audit-checklist-card { display: flex; align-items: center; justify-content: space-between; gap: 18px 28px; padding: 18px 22px; border: 1px solid #578899; border-left: 6px solid #578899; border-radius: 12px; background: #eef6f8; box-shadow: 0 4px 14px rgb(49 95 111 / 9%); }
+.audit-checklist-copy { min-width: 0; }
+.audit-checklist-kicker { color: #315f6f; font-size: .9rem; font-weight: 900; }
+.audit-checklist-copy p { margin: 5px 0 0; color: #344e59; font-size: .85rem; line-height: 1.65; }
+.audit-checklist-actions { flex: 0 0 auto; }
+.audit-checklist-button { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; padding: 12px 22px; border: 2px solid #315f6f; border-radius: 9px; background: #315f6f; color: #fff; font-size: 1.125rem; font-weight: 900; line-height: 1.5; text-decoration: none; box-shadow: 0 3px 8px rgb(49 95 111 / 18%); }
+.audit-checklist-button:hover { border-color: #244957; background: #244957; }
+.audit-checklist-button svg { width: 21px; height: 21px; flex: 0 0 auto; }
+.audit-checklist-button svg:last-child { width: 16px; height: 16px; }
+.audit-checklist-secondary { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 14px; margin-top: 4px; color: #344e59; font-size: .75rem; }
+.audit-checklist-secondary a { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; color: #315f6f; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.audit-checklist-secondary svg { width: 14px; height: 14px; }
+.audit-checklist-button:focus-visible, .audit-checklist-secondary a:focus-visible { outline: 3px solid #0f2f3a; outline-offset: 4px; }
+
 .transition-strip { display: flex; align-items: center; gap: 16px; padding: 16px clamp(20px, 4vw, 64px); color: #d7e5ea; background: var(--navy-soft); border-bottom: 1px solid #d6e0e3; }
 .transition-strip > div { display: grid; grid-template-columns: auto auto; column-gap: 9px; align-items: baseline; }
 .transition-strip span { font-size: .75rem; font-weight: 800; letter-spacing: .05em; color: #a9c0ca; }
@@ -279,6 +294,8 @@
 
 @media (max-width: 760px) {
   .topbar { align-items: flex-start; flex-direction: column; gap: 10px; padding-block: 11px; }
+  .audit-checklist-card { align-items: stretch; flex-direction: column; gap: 12px; padding: 16px; }
+  .audit-checklist-button { width: 100%; padding-inline: 12px; }
   .brand-mark { width: 44px; height: 44px; }
   .header-actions { width: 100%; justify-content: flex-start; }
   .privacy-pill { flex: 1 1 auto; justify-content: center; }
@@ -400,6 +417,7 @@
   }
 
   .topbar,
+  .audit-checklist-notice,
   .transition-strip,
   .workspace-grid,
   .site-footer {

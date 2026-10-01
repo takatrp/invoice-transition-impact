@@ -40,6 +40,7 @@ import {
 } from '@/components/ui/table';
 import { tkcContextPack } from '@/src/contextPacks/tkc';
 import { appMeta } from '@/src/config/app-meta';
+import { AuditChecklistNotice } from '@/src/components/AuditChecklistNotice';
 import { analyzeCsv, formatYen, spanDays } from '@/src/domain/analysis';
 import {
   inferMappings,
@@ -410,6 +411,8 @@ export function InvoiceImpactSimulator() {
           <span className="header-version">{appMeta.version}</span>
         </div>
       </header>
+
+      <AuditChecklistNotice />
 
       <section className="transition-strip" aria-label="経過措置の変更">
         <div>
