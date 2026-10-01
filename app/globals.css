@@ -111,8 +111,8 @@
 .print-button svg { width: 16px; height: 16px; }
 .header-version { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 0 9px; border: 1px solid #c7d8df; border-radius: 999px; color: #315f6f; background: #eef6f8; font-size: .7rem; font-weight: 900; white-space: nowrap; }
 
-.audit-checklist-notice { width: min(var(--content-max-width), 100%); margin: 0 auto; padding: 4px var(--content-gutter) 16px; }
-.audit-checklist-card { display: flex; align-items: center; justify-content: space-between; gap: 18px 28px; padding: 18px 22px; border: 1px solid #578899; border-left: 6px solid #578899; border-radius: 12px; background: #eef6f8; box-shadow: 0 4px 14px rgb(49 95 111 / 9%); }
+.audit-checklist-notice { width: min(var(--content-max-width), 100%); margin: 0 auto; padding: 4px var(--content-gutter) 12px; }
+.audit-checklist-card { display: flex; align-items: center; justify-content: space-between; gap: 18px 28px; padding: 10px 22px; border: 1px solid #578899; border-left: 6px solid #578899; border-radius: 12px; background: #eef6f8; box-shadow: 0 4px 14px rgb(49 95 111 / 9%); }
 .audit-checklist-copy { min-width: 0; }
 .audit-checklist-kicker { color: #315f6f; font-size: .9rem; font-weight: 900; }
 .audit-checklist-copy p { margin: 5px 0 0; color: #344e59; font-size: .85rem; line-height: 1.65; }
@@ -294,7 +294,7 @@
 
 @media (max-width: 760px) {
   .topbar { align-items: flex-start; flex-direction: column; gap: 10px; padding-block: 11px; }
-  .audit-checklist-card { align-items: stretch; flex-direction: column; gap: 12px; padding: 16px; }
+  .audit-checklist-card { align-items: stretch; flex-direction: column; gap: 8px; padding: 12px 16px; }
   .audit-checklist-button { width: 100%; padding-inline: 12px; }
   .brand-mark { width: 44px; height: 44px; }
   .header-actions { width: 100%; justify-content: flex-start; }

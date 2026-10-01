@@ -47,3 +47,11 @@ test('フォーカス表示とモバイル配置を備え、既存A4縦印刷に
   assert.match(css, /@media print[\s\S]*\.audit-checklist-notice,[^}]*display: none !important/);
   assert.match(css, /@page\s*\{\s*size: A4 portrait;/);
 });
+
+test('案内の縦余白を抑えても主要ボタンと保存リンクの操作領域を維持する', () => {
+  assert.match(css, /\.audit-checklist-notice\s*\{[^}]*padding: 4px var\(--content-gutter\) 12px;/);
+  assert.match(css, /\.audit-checklist-card\s*\{[^}]*padding: 10px 22px;/);
+  assert.match(css, /\.audit-checklist-card\s*\{[^}]*flex-direction: column; gap: 8px; padding: 12px 16px;/);
+  assert.match(css, /\.audit-checklist-button\s*\{[^}]*min-height: 52px;/);
+  assert.match(css, /\.audit-checklist-secondary a\s*\{[^}]*min-height: 32px;/);
+});
